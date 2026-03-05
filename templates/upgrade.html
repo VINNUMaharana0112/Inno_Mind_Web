@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upgrade Subscription - Inno Mind Academy</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; padding: 20px; text-align: center; }
+        .header { background-color: #2c3e50; color: white; padding: 20px; border-radius: 10px; margin-bottom: 30px; }
+        .grid { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        .tier-card { background: white; padding: 30px; border-radius: 12px; width: 280px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        .gold { border-top: 5px solid #f1c40f; }
+        .diamond { border-top: 5px solid #9b59b6; }
+        select { width: 100%; padding: 10px; margin-bottom: 20px; border-radius: 5px; font-weight: bold; }
+        .price { font-size: 32px; font-weight: bold; color: #2c3e50; margin: 15px 0; }
+        .pay-btn { background-color: #2ecc71; color: white; border: none; padding: 15px; width: 100%; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; transition: 0.2s; }
+        .pay-btn:hover { background-color: #27ae60; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h2>🚀 Unlock Premium Exam Engines</h2>
+        <p>Select your course and upgrade your daily testing limits.</p>
+        <a href="/" style="color: #3498db; text-decoration: none;">&larr; Back to Dashboard</a>
+    </div>
+
+    <div id="rzp-key" data-key="{{ key_id }}" style="display: none;"></div>
+
+    <div class="grid">
+        <div class="tier-card gold">
+            <h2 style="color: #f39c12; margin-top: 0;">GOLD TIER</h2>
+            <p style="color: #7f8c8d; font-size: 14px;">50 MCQs / Day<br>20 Descriptive Answers</p>
+            
+            <select id="gold-course" onchange="updatePrice('Gold', 'gold-price', 'gold-course')">
+                <option value="" disabled selected>Select Course...</option>
+                {% for course, tiers in pricing.items() %}
+                    <option value="{{ course }}" data-price="{{ tiers['Gold'] }}">{{ course }}</option>
+                {% endfor %}
+            </select>
+            
+            <div class="price" id="gold-price">₹---</div>
+            <button class="pay-btn" onclick="initiatePayment('Gold', 'gold-course')">Upgrade to Gold</button>
+        </div>
+
+        <div class="tier-card diamond">
+            <h2 style="color: #8e44ad; margin-top: 0;">DIAMOND TIER</h2>
+            <p style="color: #7f8c8d; font-size: 14px;">100 MCQs / Day<br>50 Descriptive Answers</p>
+            
+            <select id="diamond-course" onchange="updatePrice('Diamond', 'diamond-price', 'diamond-course')">
+                <option value="" disabled selected>Select Course...</option>
+                {% for course, tiers in pricing.items() %}
+                    <option value="{{ course }}" data-price="{{ tiers['Diamond'] }}">{{ course }}</option>
+                {% endfor %}
+            </select>
+            
+            <div class="price" id="diamond-price">₹---</div>
+            <button class="pay-btn" onclick="initiatePayment('Diamond', 'diamond-course')">Upgrade to Diamond</button>
+        </div>
+    </div>
+
+    <script>
+        const RZP_KEY = document.getElementById('rzp-key').getAttribute('data-key');
+
+        function updatePrice(tier, priceElementId, selectElementId) {
+            const select = document.getElementById(selectElementId);
+            const price = select.options[select.selectedIndex].getAttribute('data-price');
+            document.getElementById(priceElementId).innerText = "₹" + price;
+        }
+
+        async function initiatePayment(tier, selectElementId) {
+            const select = document.getElementById(selectElementId);
+            const course = select.value;
+            
+            if (!course) {
+                alert("Please select a course first!");
+                return;
+            }
+
+            // Step 1: Tell Python backend to create a Razorpay Order
+            const response = await fetch('/create_order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ course: course, tier: tier })
+            });
+            const orderData = await response.json();
+            
+            if (orderData.error) { alert("Error: " + orderData.error); return; }
+
+            // Step 2: Open the Razorpay Popup Window
+            const options = {
+                "key": RZP_KEY,
+                "amount": orderData.amount,
+                "currency": "INR",
+                "name": "Inno Mind Academy",
+                "description": `${course} - ${tier} Subscription`,
+                "order_id": orderData.order_id,
+                
+                // Step 3: Handle the success callback
+                "handler": async function (response) {
+                    const verifyRes = await fetch('/verify_payment', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            razorpay_payment_id: response.razorpay_payment_id,
+                            razorpay_order_id: response.razorpay_order_id,
+                            razorpay_signature: response.razorpay_signature,
+                            course: orderData.course,
+                            tier: orderData.tier
+                        })
+                    });
+                    
+                    const verifyData = await verifyRes.json();
+                    if (verifyData.status === "Success") {
+                        alert("Payment Successful! You are now a " + tier + " member.");
+                        window.location.href = "/"; // Send back to dashboard
+                    } else {
+                        alert("Payment verification failed.");
+                    }
+                },
+                "theme": { "color": "#2c3e50" }
+            };
+            
+            const rzp = new Razorpay(options);
+            rzp.open();
+        }
+    </script>
+</body>
+</html>

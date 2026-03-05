@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Study Materials - Inno Mind Academy</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; margin: 0; display: flex; flex-direction: column; height: 100vh; }
+        .header { background-color: #2c3e50; color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 10; }
+        .header a { color: #3498db; text-decoration: none; font-weight: bold; background: white; padding: 5px 15px; border-radius: 20px; font-size: 14px; }
+        
+        .main-container { display: flex; flex: 1; overflow: hidden; flex-direction: row; }
+        
+        /* Sidebar (The Taxonomy Tree) */
+        .sidebar { width: 300px; background: white; border-right: 1px solid #ddd; overflow-y: auto; padding: 15px; }
+        .tier { margin-left: 15px; display: none; margin-top: 5px; }
+        .tier.active { display: block; }
+        
+        .folder-btn { width: 100%; text-align: left; background: none; border: none; font-size: 15px; padding: 8px 5px; cursor: pointer; color: #34495e; font-weight: 600; border-radius: 5px; transition: background 0.2s; }
+        .folder-btn:hover { background-color: #ecf0f1; }
+        .leaf-btn { width: 100%; text-align: left; background: none; border: none; font-size: 14px; padding: 8px 5px; cursor: pointer; color: #2980b9; margin-left: 10px; border-radius: 5px; }
+        .leaf-btn:hover { background-color: #d6eaf8; }
+        
+        /* Reading Pane */
+        .content-pane { flex: 1; padding: 30px; overflow-y: auto; background: #f4f6f9; }
+        .content-card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-width: 800px; margin: 0 auto; display: none; }
+        
+        .breadcrumbs { font-size: 12px; color: #7f8c8d; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+        .content-title { font-size: 28px; color: #2c3e50; margin-top: 0; margin-bottom: 20px; border-bottom: 2px solid #ecf0f1; padding-bottom: 15px; }
+        .content-body { font-size: 16px; line-height: 1.6; color: #333; }
+        
+        /* Mobile Stack */
+        @media (max-width: 768px) {
+            .main-container { flex-direction: column; }
+            .sidebar { width: 100%; height: 40%; border-right: none; border-bottom: 2px solid #ddd; padding: 10px; box-sizing: border-box; }
+            .content-pane { height: 60%; padding: 15px; }
+            .content-card { padding: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div style="font-size: 18px; font-weight: bold;">📚 Inno Mind Academy Vault</div>
+        <a href="/">&larr; Dashboard</a>
+    </div>
+    
+    <div class="main-container">
+        <div class="sidebar">
+            <h4 style="margin-top: 0; color: #7f8c8d; text-transform: uppercase; font-size: 12px;">Course Library</h4>
+            
+            {{ tree_html | safe }}
+            
+        </div>
+        
+        <div class="content-pane">
+            <div id="welcome-msg" style="text-align: center; color: #95a5a6; margin-top: 100px;">
+                <h2>Select a topic from the library to start studying.</h2>
+                <p>All math equations and diagrams will load automatically.</p>
+            </div>
+            
+            <div id="reader-card" class="content-card">
+                <div id="c-breadcrumbs" class="breadcrumbs"></div>
+                <h1 id="c-title" class="content-title"></h1>
+                <div id="c-body" class="content-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const contentData = {{ content_dict | tojson | safe }};
+        
+        function toggleTier(id) {
+            const el = document.getElementById(id);
+            if (el.classList.contains('active')) {
+                el.classList.remove('active');
+            } else {
+                el.classList.add('active');
+            }
+        }
+        
+        function loadContent(docId) {
+            const data = contentData[docId];
+            if (!data) return;
+            
+            document.getElementById('welcome-msg').style.display = 'none';
+            document.getElementById('reader-card').style.display = 'block';
+            
+            document.getElementById('c-breadcrumbs').innerHTML = data.breadcrumbs;
+            document.getElementById('c-title').innerText = data.title;
+            document.getElementById('c-body').innerHTML = data.body;
+            
+            if (window.innerWidth <= 768) {
+                document.querySelector('.content-pane').scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+    </script>
+</body>
+</html>

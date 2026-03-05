@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Student Dashboard - Inno Mind Academy</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; padding: 20px; margin: 0; }
+        .header { background-color: #2c3e50; color: white; padding: 20px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .header h2 { margin: 0; font-size: 20px; }
+        .logout-btn { color: white; background-color: #e74c3c; text-decoration: none; font-weight: bold; padding: 8px 16px; border-radius: 5px; font-size: 14px; }
+        
+        .stats-banner { display: flex; gap: 20px; margin-top: 20px; flex-wrap: wrap; }
+        .stat-box { flex: 1; background: white; padding: 20px; border-radius: 10px; text-align: center; border-bottom: 4px solid #2ecc71; box-shadow: 0 2px 5px rgba(0,0,0,0.05); min-width: 100px; }
+        .stat-box h3 { margin: 0; font-size: 30px; color: #2c3e50; }
+        .stat-box p { margin: 5px 0 0 0; font-size: 13px; color: #7f8c8d; text-transform: uppercase; font-weight: bold; }
+
+        /* NEW: Upgrade Banner Styling */
+        .upgrade-banner { background-color: #fdf2e9; border: 2px solid #e67e22; padding: 15px 20px; border-radius: 10px; margin-top: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
+        .upgrade-banner p { margin: 0; color: #d35400; font-weight: bold; font-size: 15px; }
+        .upgrade-btn { background-color: #e67e22; color: white; text-decoration: none; font-weight: bold; padding: 10px 20px; border-radius: 5px; transition: 0.2s; }
+        .upgrade-btn:hover { background-color: #d35400; }
+
+        .action-container { display: flex; gap: 20px; margin-top: 20px; flex-wrap: wrap; }
+        .card { flex: 1; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); text-align: center; min-width: 250px; }
+        .card h3 { color: #2c3e50; margin-top: 10px; margin-bottom: 5px; }
+        .card p { color: #7f8c8d; font-size: 14px; margin-bottom: 20px; line-height: 1.5; }
+        .action-btn { display: inline-block; color: white; text-decoration: none; padding: 12px 25px; border-radius: 25px; font-weight: bold; font-size: 15px; width: 60%; }
+
+        .data-container { display: flex; gap: 20px; margin-top: 20px; flex-wrap: wrap; }
+        .chart-section { flex: 2; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-width: 300px; }
+        .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        select { padding: 8px; border-radius: 5px; border: 1px solid #bdc3c7; font-weight: bold; color: #2c3e50; outline: none; }
+        
+        .history-section { flex: 1; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-width: 280px; max-height: 400px; overflow-y: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { text-align: left; padding: 12px 8px; border-bottom: 1px solid #ecf0f1; font-size: 14px; }
+        th { color: #7f8c8d; text-transform: uppercase; font-size: 12px; }
+        .score-badge { font-weight: bold; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>Hi, {{ user_name }}! 👋</h2>
+        <a href="/logout" class="logout-btn">Logout</a>
+    </div>
+
+    <div class="stats-banner">
+        <div class="stat-box"><h3>{{ net }}</h3><p>Net Score</p></div>
+        <div class="stat-box"><h3>{{ total }}</h3><p>MCQs Attempted</p></div>
+        <div class="stat-box"><h3>{{ acc }}%</h3><p>Accuracy</p></div>
+    </div>
+    
+    {% if session.get('subscription') == 'Silver' %}
+    <div class="upgrade-banner">
+        <p>⭐ You are currently on the free Silver plan. Upgrade to unlock more mock tests and daily MCQs!</p>
+        <a href="/upgrade" class="upgrade-btn">Upgrade to Gold/Diamond</a>
+    </div>
+    {% endif %}
+
+    <div class="action-container">
+        <div class="card" style="border-top: 4px solid #3498db;">
+            <h1 style="font-size: 30px; margin: 0;">📚</h1>
+            <h3>Study Vault</h3>
+            <p>Access notes, concepts, and math theory.</p>
+            <a href="/study" class="action-btn" style="background-color: #3498db;">Enter Vault</a>
+        </div>
+        <div class="card" style="border-top: 4px solid #e67e22;">
+            <h1 style="font-size: 30px; margin: 0;">🎓</h1>
+            <h3>Live Exam</h3>
+            <p>Take timed, dynamic mock tests.</p>
+            <a href="/exam_config" class="action-btn" style="background-color: #e67e22;">Configure Test</a>
+        </div>
+    </div>
+
+    <div class="data-container">
+        <div class="chart-section">
+            <div class="chart-header">
+                <h3 style="margin: 0; color: #2c3e50;">Performance Analysis</h3>
+                <select id="analysisLevel" onchange="renderChart()">
+                    <option value="course">By Course</option>
+                    <option value="subject" selected>By Subject</option>
+                    <option value="block">By Block</option>
+                    <option value="unit">By Unit</option>
+                    <option value="topic">By Topic</option>
+                </select>
+            </div>
+            <canvas id="perfChart" style="max-height: 300px;"></canvas>
+        </div>
+
+        <div class="history-section">
+            <h3 style="margin: 0 0 10px 0; color: #2c3e50;">Recent Tests</h3>
+            {% if test_history %}
+            <table>
+                <tr>
+                    <th>Date</th>
+                    <th>Score</th>
+                    <th>Acc %</th>
+                </tr>
+                {% for test in test_history %}
+                <tr>
+                    <td>{{ test.date }}</td>
+                    <td>{{ test.score }}/{{ test.total }}</td>
+                    <td>
+                        <span class="score-badge" style="background-color: {% if test.pct >= 75 %}#2ecc71{% elif test.pct >= 50 %}#f1c40f{% else %}#e74c3c{% endif %};">
+                            {{ test.pct }}%
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+            {% else %}
+                <p style="color: #7f8c8d; font-size: 14px; text-align: center; margin-top: 50px;">Take a test to generate your history!</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        const rawData = {{ analytics_data | tojson | safe }};
+        let currentChart = null;
+
+        function renderChart() {
+            const level = document.getElementById('analysisLevel').value;
+            const targetData = rawData[level];
+            
+            const labels = [];
+            const dataPcts = [];
+
+            for (const [name, stats] of Object.entries(targetData)) {
+                if (stats.total > 0) {
+                    labels.push(name.length > 15 ? name.substring(0, 15) + '...' : name);
+                    let pct = (stats.score / stats.total) * 100;
+                    dataPcts.push(Math.max(0, pct)); 
+                }
+            }
+
+            const ctx = document.getElementById('perfChart').getContext('2d');
+            
+            if (currentChart) { currentChart.destroy(); }
+
+            currentChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels.length > 0 ? labels : ['No Data'],
+                    datasets: [{
+                        label: 'Accuracy %',
+                        data: dataPcts.length > 0 ? dataPcts : [0],
+                        backgroundColor: '#3498db',
+                        borderRadius: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, max: 100 }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+
+        window.onload = renderChart;
+    </script>
+</body>
+</html>

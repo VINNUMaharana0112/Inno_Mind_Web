@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Configuration - Inno Mind Academy</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; padding: 20px; }
+        .config-card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-width: 600px; margin: 0 auto; }
+        h2 { color: #2c3e50; margin-top: 0; text-align: center; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px; }
+        
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-weight: bold; color: #34495e; margin-bottom: 5px; }
+        input[type="text"], input[type="number"] { width: 100%; padding: 10px; border: 1px solid #bdc3c7; border-radius: 5px; box-sizing: border-box; }
+        
+        .checkbox-group { display: flex; gap: 15px; margin-top: 5px; }
+        .checkbox-group label { font-weight: normal; color: #333; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+        
+        .submit-btn { background-color: #e74c3c; color: white; border: none; padding: 15px; width: 100%; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; transition: 0.2s; }
+        .submit-btn:hover { background-color: #c0392b; }
+        .back-btn { display: block; text-align: center; margin-top: 15px; color: #7f8c8d; text-decoration: none; }
+        
+        .error { background: #fee; color: #c0392b; padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="config-card">
+        <h2>⚙️ Test Configuration Wizard</h2>
+        
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            <div class="error">{{ messages[0] }}</div>
+          {% endif %}
+        {% endwith %}
+
+        <form action="/take_exam" method="POST">
+            <div class="form-group">
+                <label>Course Filter (Optional):</label>
+                <input type="text" name="course" placeholder="e.g. IPMAT 2026">
+            </div>
+            
+            <div class="form-group">
+                <label>Subject Filter (Optional):</label>
+                <input type="text" name="subject" placeholder="e.g. Higher Math">
+            </div>
+            
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
+                <div class="form-group" style="flex: 1; min-width: 120px;">
+                    <label>Questions:</label>
+                    <input type="number" name="count" value="10" min="1" max="50" required>
+                </div>
+                <div class="form-group" style="flex: 1; min-width: 120px;">
+                    <label>Timer (Mins):</label>
+                    <input type="number" name="timer" value="15" min="1" max="180" required>
+                </div>
+                <div class="form-group" style="flex: 1; min-width: 120px;">
+                    <label>Correct Mark (k):</label>
+                    <input type="number" name="pos_mark" value="4.0" step="0.5" required>
+                </div>
+                <div class="form-group" style="flex: 1; min-width: 120px;">
+                    <label>Negative Mark (n):</label>
+                    <input type="number" name="neg_mark" value="1.0" step="0.25" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Include Sections:</label>
+                <div class="checkbox-group">
+                    <label><input type="checkbox" name="q_types" value="MCQ" checked> MCQs</label>
+                    <label><input type="checkbox" name="q_types" value="Short Answer" checked> Short Answer</label>
+                    <label><input type="checkbox" name="q_types" value="Long Answer" checked> Long Answer</label>
+                </div>
+            </div>
+
+            <button type="submit" class="submit-btn">START CLOUD TEST</button>
+            <a href="/" class="back-btn">&larr; Back to Dashboard</a>
+        </form>
+    </div>
+</body>
+</html>

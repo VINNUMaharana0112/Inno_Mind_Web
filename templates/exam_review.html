@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Exam Review - Inno Mind Academy</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; margin: 0; padding: 20px; }
+        .score-banner { background-color: #2ecc71; color: white; padding: 30px; border-radius: 12px; text-align: center; margin-bottom: 30px; box-shadow: 0 4px 10px rgba(46, 204, 113, 0.2); }
+        .score-banner h1 { margin: 0; font-size: 36px; }
+        .score-banner p { margin: 10px 0 0 0; font-size: 18px; opacity: 0.9; }
+        
+        .review-card { background: white; padding: 25px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .correct-card { border-left: 5px solid #2ecc71; }
+        .wrong-card { border-left: 5px solid #e74c3c; }
+        .skipped-card { border-left: 5px solid #95a5a6; }
+        
+        .q-text { font-size: 16px; color: #2c3e50; margin-bottom: 15px; font-weight: bold; }
+        .ans-box { background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 15px; font-size: 15px; }
+        .exp-box { background: #e8f4f8; padding: 15px; border-radius: 5px; color: #2980b9; font-size: 14px; }
+        
+        .btn { display: block; background-color: #3498db; color: white; text-align: center; padding: 15px; text-decoration: none; font-weight: bold; border-radius: 8px; margin-top: 30px; }
+    </style>
+</head>
+<body>
+
+    <div class="score-banner">
+        <h1>Net Score: {{ score }}</h1>
+        <p>Correct: {{ correct }} | Incorrect: {{ wrong }}</p>
+    </div>
+
+    {% for item in review_data %}
+        <div class="review-card {% if item.is_skipped %}skipped-card{% elif item.is_correct %}correct-card{% else %}wrong-card{% endif %}">
+            <div style="color: #7f8c8d; font-size: 12px; font-weight: bold; margin-bottom: 10px; text-transform: uppercase;">
+                Question {{ loop.index }} [{{ item.type }}] 
+                {% if item.is_skipped %}- SKIPPED{% elif item.is_correct %}- CORRECT{% else %}- INCORRECT{% endif %}
+            </div>
+            
+            <div class="q-text">{{ item.q_html | safe }}</div>
+            
+            <div class="ans-box">
+                <div><strong>Your Answer:</strong> 
+                    <span style="color: {% if item.is_correct %}#27ae60{% elif item.is_skipped %}#7f8c8d{% else %}#c0392b{% endif %};">
+                        {{ item.user_ans }}
+                    </span>
+                </div>
+                {% if item.type == 'MCQ' %}
+                <div style="margin-top: 5px;"><strong>Correct Answer:</strong> {{ item.correct_ans }}</div>
+                {% endif %}
+            </div>
+            
+            <div class="exp-box">
+                <strong>Explanation:</strong><br>
+                {{ item.exp | safe }}
+            </div>
+        </div>
+    {% endfor %}
+
+    <a href="/" class="btn">&larr; Return to Dashboard</a>
+
+</body>
+</html>
