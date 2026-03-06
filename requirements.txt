@@ -2,3 +2,4 @@ Flask==3.0.2
 firebase-admin==6.5.0
 razorpay==1.4.1
 gunicorn==21.2.0
+setuptools
