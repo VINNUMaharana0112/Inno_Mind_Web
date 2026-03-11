@@ -2,13 +2,14 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
 from google.cloud.firestore_v1.base_query import FieldFilter
+from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import io
 import re
 import random
 import uuid
+import hashlib
 from datetime import datetime
-import razorpay
 
 app = Flask(__name__)
 app.secret_key = "inno_mind_super_secret_key" 
@@ -16,6 +17,15 @@ app.secret_key = "inno_mind_super_secret_key"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 KEY_PATH = os.path.join(SCRIPT_DIR, "PSC_Data_Vault", "firebase_key.json")
 CLOUD_BUCKET_NAME = "psc-smart-preparation-app"
+
+# --- SUBSCRIPTION LIMITS (Needed for the Web App Paywall) ---
+SUBSCRIPTION_LIMITS = {
+    "Free": {"mcq": 0, "descriptive": 0}, 
+    "Silver": {"mcq": 10, "descriptive": 2}, 
+    "Gold": {"mcq": 50, "descriptive": 20}, 
+    "Diamond": {"mcq": 100, "descriptive": 50}, 
+    "Admin": {"mcq": 9999, "descriptive": 9999}
+}
 
 if not firebase_admin._apps:
     try:
@@ -31,20 +41,58 @@ if not firebase_admin._apps:
 db = firestore.client()
 bucket = storage.bucket()
 
-# --- WEB ROUTES ---
+@app.context_processor
+def inject_institute_brand():
+    host_url = request.host.replace('www.', '').split(':')[0]
+    doc_ref = db.collection('institutions').document(host_url)
+    doc = doc_ref.get()
+    
+    if doc.exists:
+        institute_data = doc.to_dict()
+    else:
+        institute_data = {
+            "name": "Inno Mind Academy",
+            "domain": "innomindacademy.in",
+            "logo_url": "/static/images/innomind_logo.png", 
+            "theme_color": "#1E3A8A"
+        }
+    return dict(institute=institute_data)
+
+# ================= CORE ROUTES =================
 
 @app.route('/')
 def home():
     if 'user_email' not in session: return redirect(url_for('login'))
     
-    # THE FIX: Only ask Firebase to filter (Lightning fast). 
-    # We removed the cloud 'order_by' command.
-    results_stream = db.collection("student_results").where(filter=FieldFilter("student", "==", session['user_email'])).stream()
+    user_email = session['user_email']
+    user_doc = db.collection('users').document(user_email).get()
     
-    # Extract all the data into a local Python list
+    enrolled_course = None 
+    subscription_tier = "Free"
+    
+    if user_doc.exists:
+        user_data = user_doc.to_dict()
+        enrolled_course = user_data.get('enrolled_course')
+        if enrolled_course == "None" or enrolled_course == "": 
+            enrolled_course = None
+            
+        subscription_tier = user_data.get('subscription', 'Free')
+        session['enrolled_course'] = enrolled_course 
+        session['subscription'] = subscription_tier
+        
+    available_courses = {}
+    if not enrolled_course:
+        try:
+            docs = db.collection('courses').where('status', '==', 'active').stream()
+            for doc in docs:
+                c_data = doc.to_dict()
+                if "course_name" in c_data and "course_value" in c_data:
+                    available_courses[c_data["course_name"]] = c_data["course_value"]
+        except Exception as e:
+            print(f"Error fetching active courses: {e}")
+
+    results_stream = db.collection("student_results").where(filter=FieldFilter("student", "==", user_email)).stream()
     all_results = [r.to_dict() for r in results_stream]
-    
-    # THE FIX: Use Python to sort the dates. (Instantaneous).
     all_results.sort(key=lambda x: x.get("date", ""), reverse=True)
     
     total_mcq = 0; net_score = 0.0
@@ -54,19 +102,15 @@ def home():
     for d in all_results:
         q_total = int(d.get('mcq_total_raw', 0))
         q_score = float(d.get('mcq_score_raw', 0))
-        
         total_mcq += q_total
         net_score += q_score
         
-        # 1. Build the Individual Test History List
         test_history.append({
             "date": d.get("date", "Unknown Date").split(" ")[0],
-            "score": q_score,
-            "total": q_total,
+            "score": q_score, "total": q_total,
             "pct": round((q_score / q_total * 100), 1) if q_total > 0 else 0
         })
         
-        # 2. Aggregate Data for the Dynamic Charts
         breakdown = d.get('breakdown', {})
         for level in ['course', 'subject', 'block', 'unit', 'topic']:
             level_data = breakdown.get(level, {})
@@ -79,43 +123,164 @@ def home():
     acc = round((net_score / total_mcq * 100), 1) if total_mcq > 0 else 0
 
     return render_template('dashboard.html', 
-                           user_name=session.get('user_name'), 
-                           acc=acc, net=net_score, total=total_mcq,
-                           test_history=test_history,
-                           analytics_data=aggregated_stats)
+                            user_name=session.get('user_name'), 
+                            acc=acc, net=net_score, total=total_mcq,
+                            test_history=test_history,
+                            analytics_data=aggregated_stats,
+                            enrolled_course=enrolled_course,
+                            available_courses=available_courses,
+                            subscription=subscription_tier)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        email = request.form.get('email').strip().lower()
-        password = request.form.get('password').strip()
+        email = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '').strip()
         
-        doc = db.collection("users").document(email).get()
-        if doc.exists and doc.to_dict().get("password") == password:
-            user_data = doc.to_dict()
-            session['user_email'] = user_data['email']
-            session['user_name'] = user_data['name']
-            session['subscription'] = user_data['subscription']
-            return redirect(url_for('home'))
+        # --- SAFETY NET ---
+        if not email or not password:
+            flash("Please enter both email and password.")
+            return render_template('login.html')
+            
+        user_doc = db.collection("users").document(email).get()
+        
+        if user_doc.exists:
+            user_data = user_doc.to_dict()
+            stored_password_hash = user_data.get("password", "")
+            
+            if check_password_hash(stored_password_hash, password):
+                session['user_email'] = email
+                session['user_name'] = user_data.get("name")
+                session['user_role'] = user_data.get("role")
+                session['subscription'] = user_data.get("subscription", "Free")
+                session['enrolled_course'] = user_data.get("enrolled_course")
+                
+                # We don't flash "Welcome back" here because it immediately redirects to the dashboard
+                return redirect(url_for('home'))
+            else:
+                flash("Invalid email or password.")
         else:
-            flash("Invalid email or password. Please try again.")
+            flash("Invalid email or password.")
+            
     return render_template('login.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        phone = request.form.get('phone', '').strip()
+        email = request.form.get('email', '').strip().lower()
+        address = request.form.get('address', '').strip()
+        password = request.form.get('password', '').strip()
+        enrolled_course = request.form.get('enrolled_course', '')
+        
+        # --- SAFETY NET ---
+        if not email or not password:
+            flash("Error: Email and Password are required fields!")
+            return redirect(url_for('register'))
+            
+        if db.collection("users").document(email).get().exists:
+            flash("Email already registered! Try logging in.")
+            return redirect(url_for('register'))
+        
+        hashed_password = generate_password_hash(password)
+        
+        user_data = {
+            "name": name, "phone": phone, "email": email, "address": address,
+            "password": hashed_password, "role": "Student", "subscription": "Free",
+            "enrolled_course": enrolled_course,
+            "join_date": datetime.now().strftime("%Y-%m-%d"),
+            "mcqs_taken_today": 0, "last_active": datetime.now().strftime("%Y-%m-%d")
+        }
+        db.collection("users").document(email).set(user_data)
+        
+        # This message will now successfully display on the login page!
+        flash("Registration successful! Please log in with your new credentials.")
+        return redirect(url_for('login'))
+        
+    available_courses = {}
+    host_url = request.host.replace('www.', '').split(':')[0]
+    if host_url in ['127.0.0.1', 'localhost']: host_url = 'innomindacademy.in'
+    
+    try:
+        docs = db.collection('courses').where('institute_id', '==', host_url).where('status', '==', 'active').stream()
+        for doc in docs:
+            c_data = doc.to_dict()
+            if "course_name" in c_data and "course_value" in c_data:
+                available_courses[c_data["course_name"]] = c_data["course_value"]
+    except Exception as e: print(f"Error fetching active courses: {e}")
+
+    return render_template('register.html', courses=available_courses)
+
+@app.route('/forgot_password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        phone = request.form.get('phone', '').strip()
+        new_password = request.form.get('new_password', '').strip()
+        
+        # Safety Net
+        if not email or not phone or not new_password:
+            flash("All fields are required to reset your password.")
+            return redirect(url_for('forgot_password'))
+            
+        user_ref = db.collection("users").document(email)
+        user_doc = user_ref.get()
+        
+        if user_doc.exists:
+            user_data = user_doc.to_dict()
+            
+            # THE VERIFICATION: Does the phone number match the database?
+            if user_data.get('phone') == phone:
+                # Scramble the new password and update the database!
+                hashed_password = generate_password_hash(new_password)
+                user_ref.update({"password": hashed_password})
+                
+                flash("Password successfully reset! You can now log in securely.")
+                return redirect(url_for('login'))
+            else:
+                flash("Verification failed: The phone number does not match our records.")
+        else:
+            flash("Error: That email address is not registered in our system.")
+            
+        return redirect(url_for('forgot_password'))
+        
+    return render_template('forgot_password.html')
 
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('login'))
 
+@app.route('/set_course', methods=['POST'])
+def set_course():
+    if 'user_email' not in session: return redirect(url_for('login'))
+    selected_course = request.form.get('selected_course')
+    if selected_course:
+        db.collection("users").document(session['user_email']).update({"enrolled_course": selected_course})
+        session['enrolled_course'] = selected_course
+        flash("Course successfully linked!")
+    else:
+        flash("Please select a valid course.")
+    return redirect(url_for('home'))
+
+# ================= STUDY VAULT =================
+
 @app.route('/study')
 def study():
     if 'user_email' not in session: return redirect(url_for('login'))
-    docs = db.collection("opsc_content").stream()
+    
+    enrolled_course = session.get('enrolled_course')
+    if not enrolled_course:
+        flash("You are not enrolled in a course yet. Please contact your administrator.")
+        return redirect(url_for('home'))
+        
+    docs = db.collection("opsc_content").where('course_values', 'array_contains', enrolled_course).stream()
+    
     tree = {}; content_dict = {}
     for doc in docs:
         d = doc.to_dict()
-        c = d.get('course', 'Uncategorized'); s = d.get('subject', 'General')
-        b = d.get('block', 'Block 1'); u = d.get('unit', 'Unit 1')
-        t = d.get('topic', 'Topic 1'); st = d.get('subtopic', 'Subtopic 1')
+        c = d.get('course', 'Uncategorized'); s = d.get('subject', 'General'); b = d.get('block', 'Block'); u = d.get('unit', 'Unit'); t = d.get('topic', 'Topic'); st = d.get('subtopic', 'Subtopic')
         
         if c not in tree: tree[c] = {}
         if s not in tree[c]: tree[c][s] = {}
@@ -126,16 +291,8 @@ def study():
         tree[c][s][b][u][t].append({'id': doc.id, 'subtopic': st})
         
         raw_body = d.get('body', '').replace('\n', '<br>')
-        html_body = re.sub(
-            r'\{\{IMG:(.*?)\}\}', 
-            r'<img src="/asset/\1" style="max-width:100%; border-radius:8px; margin:15px 0; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">', 
-            raw_body
-        )
-        content_dict[doc.id] = {
-            'breadcrumbs': f"{c} &rarr; {s} &rarr; {t}",
-            'title': st,
-            'body': html_body
-        }
+        html_body = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-width:100%; border-radius:8px; margin:15px 0; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">', raw_body)
+        content_dict[doc.id] = {'breadcrumbs': f"{c} &rarr; {s} &rarr; {t}", 'title': st, 'body': html_body}
 
     def generate_tree_html(node, depth=0, prefix="tier"):
         html = ""
@@ -180,37 +337,57 @@ def exam_config():
 def take_exam():
     if 'user_email' not in session: return redirect(url_for('login'))
     
-    course = request.form.get('course', '').strip().lower()
-    subject = request.form.get('subject', '').strip().lower()
-    count = int(request.form.get('count', 10))
-    timer = int(request.form.get('timer', 15))
-    pos_mark = float(request.form.get('pos_mark', 4.0)) 
-    neg_mark = float(request.form.get('neg_mark', 1.0)) 
+    enrolled_course = session.get('enrolled_course')
+    if not enrolled_course:
+        flash("You must be enrolled in a course to take an exam.")
+        return redirect(url_for('home'))
+
+    rule_tags = request.form.getlist('rule_tag[]')
+    rule_counts = request.form.getlist('rule_count[]')
+    timer = int(request.form.get('timer', 15)) * 60
+    pos_mark = float(request.form.get('pos_mark', 4.0))
+    neg_mark = float(request.form.get('neg_mark', 1.0))
     allowed_types = request.form.getlist('q_types')
-    
+
     if not allowed_types:
-        flash("Please select at least one question type.")
+        flash("Please select at least one section (e.g. MCQs).")
         return redirect(url_for('exam_config'))
-        
-    pool = []
-    docs = db.collection("opsc_content").stream()
+
+    total_req_count = sum(int(c) for c in rule_counts if c.isdigit() and int(c) > 0)
+
+    tier = session.get('subscription', 'Free')
+    limits = SUBSCRIPTION_LIMITS.get(tier, {"mcq": 0, "descriptive": 0})
+    
+    user_doc = db.collection('users').document(session['user_email']).get()
+    used = user_doc.to_dict().get('mcqs_taken_today', 0) if user_doc.exists else 0
+    
+    if used + total_req_count > limits['mcq']:
+        flash(f"Upgrade Required! Your {tier} limit is {limits['mcq']} questions per day. You have already used {used}.")
+        return redirect(url_for('exam_config'))
+
+    seen_hashes = set()
+    try:
+        recent_tests = db.collection("student_results").where(filter=FieldFilter("student", "==", session['user_email'])).order_by("date", direction=firestore.Query.DESCENDING).limit(5).stream()
+        for t in recent_tests: seen_hashes.update(t.to_dict().get('seen_qs', []))
+    except: pass
+
+    docs = db.collection("opsc_content").where('course_values', 'array_contains', enrolled_course).stream()
+    master_qs = []
+    
     for doc in docs:
         d = doc.to_dict()
-        c_tag = d.get('course', 'Uncategorized')
-        s_tag = d.get('subject', 'General')
-        
-        if course and course not in c_tag.lower(): continue
-        if subject and subject not in s_tag.lower(): continue
-        
         for q in d.get('questions', []):
             if q.get('type', 'MCQ') in allowed_types:
+                q_fingerprint = hashlib.md5(q.get('q', '').encode('utf-8')).hexdigest()
+                if q_fingerprint in seen_hashes: continue 
+                
                 smart_q = q.copy()
-                smart_q['meta'] = {'course': c_tag, 'subject': s_tag, 'block': d.get('block', 'Block'), 'unit': d.get('unit', 'Unit'), 'topic': d.get('topic', 'Topic')}
+                smart_q['q_hash'] = q_fingerprint
+                smart_q['meta'] = {'course': d.get('course', 'Uncategorized'), 'subject': d.get('subject', 'General'), 'block': d.get('block', 'Block'), 'unit': d.get('unit', 'Unit'), 'topic': d.get('topic', 'Topic')}
                 
                 raw_q = smart_q.get('q', '').replace('\n', '<br>')
                 smart_q['q_html'] = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-width:100%; border-radius:5px; margin:10px 0;">', raw_q)
                 
-                # Format explanations for review page
                 raw_exp = smart_q.get('exp', 'No explanation provided.').replace('\n', '<br>')
                 smart_q['exp_html'] = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-height:100px; display:block; margin:10px 0;">', raw_exp)
                 
@@ -220,77 +397,68 @@ def take_exam():
                         opt_html = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-height:80px; vertical-align:middle;">', opt)
                         processed_opts.append(opt_html)
                     smart_q['opts_html'] = processed_opts
-                
-                pool.append(smart_q)
+                master_qs.append(smart_q)
 
-    if not pool:
-        flash("No questions matched your filters.")
+    active_test_qs = []
+    used_hashes_this_test = set() 
+
+    for tag, count_str in zip(rule_tags, rule_counts):
+        if not count_str.isdigit() or int(count_str) <= 0: continue
+        count = int(count_str)
+        tag_lower = tag.strip().lower()
+        
+        valid_pool = []
+        for q in master_qs:
+            if q['q_hash'] in used_hashes_this_test: continue
+            if tag_lower:
+                meta_values = str(q.get('meta', {})).lower()
+                if tag_lower not in meta_values: continue
+            valid_pool.append(q)
+            
+        selected = random.sample(valid_pool, min(count, len(valid_pool)))
+        active_test_qs.extend(selected)
+        for sq in selected: used_hashes_this_test.add(sq['q_hash'])
+
+    if not active_test_qs:
+        flash("We couldn't find enough unseen questions matching your specific blueprint. Try broadening your tags!")
         return redirect(url_for('exam_config'))
         
-    active_test_qs = random.sample(pool, min(count, len(pool)))
-    
-    # NEW ARCHITECTURE: Save active test to Firebase temporarily to prevent browser crashes
-    test_id = str(uuid.uuid4())
-    db.collection("active_tests").document(test_id).set({"qs": active_test_qs})
-    
-    exam_html = ""
-    for i, q in enumerate(active_test_qs):
-        q_type = q.get('type', 'MCQ')
-        exam_html += f'<div class="question-card">\n'
-        exam_html += f'<div class="q-header">Question {i+1} [{q_type}]</div>\n'
-        exam_html += f'<div class="q-text">{q.get("q_html", "")}</div>\n'
-        
-        if q_type == 'MCQ':
-            letters = ['A', 'B', 'C', 'D']
-            for j, opt_html in enumerate(q.get('opts_html', [])):
-                exam_html += f'<label class="option-row">\n'
-                exam_html += f'<input type="radio" name="q_{i}" value="{letters[j]}">\n'
-                exam_html += f'<span><strong>{letters[j]}:</strong> {opt_html}</span>\n'
-                exam_html += f'</label>\n'
-        else:
-            exam_html += f'<div style="font-size: 12px; color: #95a5a6; margin-bottom: 5px;">Target: 50-100 words (Short) | 200-250 words (Long)</div>\n'
-            exam_html += f'<textarea name="desc_{i}" id="desc_{i}" placeholder="Type your answer here..." oninput="updateWordCount({i})"></textarea>\n'
-            exam_html += f'<div class="word-counter" id="count_{i}">Words: 0</div>\n'
-            
-        exam_html += f'</div>\n'
-        
-    session['current_test_id'] = test_id
+    session['active_test_qs'] = active_test_qs
+    session['time_left'] = timer
     session['pos_mark'] = pos_mark
     session['neg_mark'] = neg_mark
     
-    return render_template('exam_live.html', exam_html=exam_html, timer=timer)
+    return render_template('live_exam.html', questions=active_test_qs, time_left=timer, pos_mark=pos_mark, neg_mark=neg_mark)
 
 @app.route('/submit_exam', methods=['POST'])
 def submit_exam():
     if 'user_email' not in session: return redirect(url_for('login'))
     
-    test_id = session.get('current_test_id')
-    test_doc = db.collection("active_tests").document(test_id).get()
-    
-    if not test_doc.exists:
+    active_test_qs = session.get('active_test_qs', [])
+    if not active_test_qs:
         flash("Error: Test session expired or already submitted.")
         return redirect(url_for('home'))
         
-    active_test_qs = test_doc.to_dict().get('qs', [])
-    
     pos_val = float(session.get('pos_mark', 4.0)) 
     neg_val = float(session.get('neg_mark', 1.0)) 
     
     mcq_total = 0; mcq_correct = 0; mcq_wrong = 0
     typed_descriptive = {}
     breakdown_dict = {"course": {}, "subject": {}, "block": {}, "unit": {}, "topic": {}}
-    
-    # Data to pass to the review page
     review_data = []
+    seen_qs_payload = []
     
     for i, q in enumerate(active_test_qs):
         meta = q.get('meta', {})
         q_type = q.get('type', 'MCQ')
         
+        fingerprint = q.get('q_hash')
+        if not fingerprint: fingerprint = hashlib.md5(q.get('q', '').encode('utf-8')).hexdigest()
+        seen_qs_payload.append(fingerprint)
+        
         if q_type == 'MCQ':
             mcq_total += 1
             user_ans = request.form.get(f'q_{i}', '')
-            
             is_correct = (user_ans == q.get('ans'))
             is_wrong = (user_ans != "" and not is_correct)
             score_val = pos_val if is_correct else (-neg_val if is_wrong else 0)
@@ -305,46 +473,31 @@ def submit_exam():
                 breakdown_dict[level][tag_name]['total'] += 1 
                 
             review_data.append({
-                'q_html': q.get('q_html'),
-                'type': q_type,
-                'user_ans': user_ans if user_ans else 'Skipped',
-                'correct_ans': q.get('ans'),
-                'exp': q.get('exp_html', 'No explanation provided.'),
-                'is_correct': is_correct,
-                'is_skipped': user_ans == ""
+                'q_html': q.get('q_html'), 'type': q_type, 'user_ans': user_ans if user_ans else 'Skipped',
+                'correct_ans': q.get('ans'), 'exp': q.get('exp_html', 'No explanation provided.'),
+                'is_correct': is_correct, 'is_skipped': user_ans == ""
             })
         else:
             ans_text = request.form.get(f'desc_{i}', '').strip()
             if ans_text: typed_descriptive[str(i+1)] = ans_text
-            
             review_data.append({
-                'q_html': q.get('q_html'),
-                'type': q_type,
-                'user_ans': ans_text if ans_text else 'Skipped',
-                'correct_ans': 'Manual Evaluation Required',
-                'exp': q.get('exp_html', 'No explanation provided.'),
-                'is_correct': None,
-                'is_skipped': ans_text == ""
+                'q_html': q.get('q_html'), 'type': q_type, 'user_ans': ans_text if ans_text else 'Skipped',
+                'correct_ans': 'Manual Evaluation Required', 'exp': q.get('exp_html', 'No explanation provided.'),
+                'is_correct': None, 'is_skipped': ans_text == ""
             })
 
-    # Final Score Calculation
     final_mcq_score = (mcq_correct * pos_val) - (mcq_wrong * neg_val)
     
-    # --- NEW: Catch and Upload the Handwritten Answer Sheet ---
     mains_attachment_name = None
     if 'attachment' in request.files:
         file = request.files['attachment']
-        if file.filename != '': # If the student actually selected a file
+        if file.filename != '': 
             ext = os.path.splitext(file.filename)[1] or ".png"
-            # Create a unique filename using their name
             safe_name = session['user_name'].replace(' ', '_')
             mains_attachment_name = f"{safe_name}_{uuid.uuid4().hex[:6]}{ext}"
-            
-            # Upload directly to Firebase Storage
             blob = bucket.blob(f"student_answers/{mains_attachment_name}")
             blob.upload_from_file(file, content_type=file.content_type)
-    # -----------------------------------------------------------
-    
+            
     user_email = session['user_email']
     user_ref = db.collection("users").document(user_email)
     user_doc = user_ref.get()
@@ -353,109 +506,105 @@ def submit_exam():
         user_ref.update({"mcqs_taken_today": current_usage + len(active_test_qs)})
         
     result_data = {
-        "student": user_email,
-        "mcq_score_raw": final_mcq_score,
-        "mcq_total_raw": mcq_total,
-        "breakdown": breakdown_dict, 
-        "typed_descriptive": typed_descriptive,
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "mains_attachment": mains_attachment_name, # Saved to the cloud!
-        "feedback": ""
+        "student": session['user_email'],
+        "mcq_score_raw": final_mcq_score, "mcq_total_raw": mcq_total,
+        "breakdown": breakdown_dict, "typed_descriptive": typed_descriptive,
+        "seen_qs": seen_qs_payload, 
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     db.collection("student_results").add(result_data)
     
-    db.collection("active_tests").document(test_id).delete()
+    # Clear session memory of the test
+    session.pop('active_test_qs', None)
     
     return render_template('exam_review.html', score=final_mcq_score, correct=mcq_correct, wrong=mcq_wrong, review_data=review_data)
 
-# --- RAZORPAY SETUP ---
-# Replace these with your actual TEST keys from the Razorpay Dashboard
+# ================= PRICING & PAYMENT SIMULATOR =================
+
+@app.route('/pricing')
+def pricing():
+    if 'user_email' not in session: return redirect(url_for('login'))
+    enrolled_course = session.get('enrolled_course')
+    if not enrolled_course:
+        flash("You need to be enrolled in a course to view pricing.")
+        return redirect(url_for('home'))
+
+    pricing_doc = db.collection("admin_settings").document("platform_pricing").get()
+    course_pricing = {"Gold": "Contact Admin", "Diamond": "Contact Admin"} 
+    
+    if pricing_doc.exists:
+        all_pricing = pricing_doc.to_dict().get("courses", {})
+        target = str(enrolled_course).strip().lower().replace("_", "").replace(" ", "")
+        for key, prices in all_pricing.items():
+            db_key = str(key).strip().lower().replace("_", "").replace(" ", "")
+            if db_key == target:
+                course_pricing = prices
+                break
+
+    display_name = str(enrolled_course).replace("_", " ").title()
+    return render_template('pricing.html', course_pricing=course_pricing, course_name=display_name)
+
+@app.route('/checkout/<tier>')
+def checkout(tier):
+    if 'user_email' not in session: return redirect(url_for('login'))
+    enrolled_course = session.get('enrolled_course')
+    pricing_doc = db.collection("admin_settings").document("platform_pricing").get()
+    price = "0"
+
+    if pricing_doc.exists:
+        all_pricing = pricing_doc.to_dict().get("courses", {})
+        target = str(enrolled_course).strip().lower().replace("_", "").replace(" ", "")
+        for key, prices in all_pricing.items():
+            db_key = str(key).strip().lower().replace("_", "").replace(" ", "")
+            if db_key == target:
+                price = prices.get(tier, "0")
+                break
+
+    display_name = str(enrolled_course).replace("_", " ").title()
+    return render_template('checkout.html', tier=tier, price=price, course_name=display_name)
+
+# ================= REAL PAYMENT GATEWAY (RAZORPAY) =================
+
+# 1. Initialize Razorpay (Using the TEST keys you provided earlier)
 RAZORPAY_KEY_ID = "rzp_test_SNVpSbsF9gb8ti"
 RAZORPAY_KEY_SECRET = "mwTzPIeteaf8DjQQsbJJJVlY"
-
 rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
-
-# Scalable Pricing Dictionary (Prices in INR)
-# Razorpay calculates in paise (multiply by 100 in the code)
-# --- CLOUD PRICING ENGINE ---
-def get_cloud_pricing():
-    # Fetches live pricing from the admin_settings folder in Firebase
-    doc = db.collection("admin_settings").document("platform_pricing").get()
-    if doc.exists:
-        return doc.to_dict().get("courses", {})
-    else:
-        # If the file doesn't exist yet, create it with your default prices!
-        default_pricing = {
-            "IPMAT 2026": {"Gold": 2999, "Diamond": 4999},
-            "CLAT 2026": {"Gold": 3499, "Diamond": 5999},
-            "OPSC": {"Gold": 1999, "Diamond": 3999}
-        }
-        db.collection("admin_settings").document("platform_pricing").set({"courses": default_pricing})
-        return default_pricing
-
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    # Fetch live courses from the cloud
-    pricing_data = get_cloud_pricing()
-    active_courses = list(pricing_data.keys())
-    
-    if request.method == 'POST':
-        name = request.form.get('name').strip()
-        email = request.form.get('email').strip().lower()
-        phone = request.form.get('phone').strip()
-        password = request.form.get('password').strip()
-        course = request.form.get('course').strip()
-        
-        doc_ref = db.collection("users").document(email)
-        if doc_ref.get().exists:
-            flash("An account with this email already exists! Please log in.")
-            return redirect(url_for('register'))
-            
-        user_data = {
-            "name": name, "email": email, "phone": phone, "password": password,
-            "primary_course": course, "role": "Student", "subscription": "Silver",
-            "join_date": datetime.now().strftime("%Y-%m-%d"), "mcqs_taken_today": 0,
-            "last_active": datetime.now().strftime("%Y-%m-%d")
-        }
-        doc_ref.set(user_data)
-        flash("Registration successful! You can now log in.")
-        return redirect(url_for('login'))
-        
-    # Pass the live courses to the HTML page
-    return render_template('register.html', courses=active_courses)
-
-@app.route('/upgrade')
-def upgrade_page():
-    if 'user_email' not in session: return redirect(url_for('login'))
-    # Fetch live pricing
-    live_pricing = get_cloud_pricing()
-    return render_template('upgrade.html', pricing=live_pricing, key_id=RAZORPAY_KEY_ID)
 
 @app.route('/create_order', methods=['POST'])
 def create_order():
     if 'user_email' not in session: return {"error": "Unauthorized"}, 401
     
-    course = request.json.get('course')
-    tier = request.json.get('tier')
+    data = request.json
+    tier = data.get('tier')
+    enrolled_course = session.get('enrolled_course')
     
-    # Verify the incoming request against the LIVE cloud prices, not hardcoded ones!
-    live_pricing = get_cloud_pricing()
+    # Securely fetch the live price from Firebase (Server-side check so users can't fake prices)
+    pricing_doc = db.collection("admin_settings").document("platform_pricing").get()
+    amount_inr = 0
     
-    if course not in live_pricing or tier not in live_pricing[course]:
-        return {"error": "Invalid course or tier"}, 400
-        
-    amount_inr = live_pricing[course][tier]
+    if pricing_doc.exists:
+        all_pricing = pricing_doc.to_dict().get("courses", {})
+        target = str(enrolled_course).strip().lower().replace("_", "").replace(" ", "")
+        for key, prices in all_pricing.items():
+            db_key = str(key).strip().lower().replace("_", "").replace(" ", "")
+            if db_key == target:
+                amount_inr = int(prices.get(tier, 0))
+                break
+                
+    if amount_inr <= 0: return {"error": "Invalid price configuration."}, 400
+    
+    # Razorpay requires the amount in PAISE (₹1 = 100 Paise)
     amount_paise = amount_inr * 100 
     
     order_data = {
-        "amount": amount_paise, "currency": "INR",
-        "receipt": f"receipt_{session['user_email'].split('@')[0]}_{tier}",
-        "notes": {"email": session['user_email'], "course": course, "tier": tier}
+        "amount": amount_paise,
+        "currency": "INR",
+        "receipt": f"rcpt_{session['user_email'].split('@')[0][:10]}_{tier[:3]}"
     }
     
     try:
         order = rzp_client.order.create(data=order_data)
-        return {"order_id": order['id'], "amount": amount_paise, "course": course, "tier": tier}
+        return {"order_id": order['id'], "amount": amount_paise, "key_id": RAZORPAY_KEY_ID, "tier": tier}
     except Exception as e:
         return {"error": str(e)}, 500
 
@@ -465,32 +614,23 @@ def verify_payment():
     
     data = request.json
     try:
-        # Cryptographically verify the signature so students can't fake a payment
+        # Cryptographically verify the signature so students can't fake a success screen!
         rzp_client.utility.verify_payment_signature({
             'razorpay_order_id': data['razorpay_order_id'],
             'razorpay_payment_id': data['razorpay_payment_id'],
             'razorpay_signature': data['razorpay_signature']
         })
         
-        # Payment is legit! Upgrade the user in Firebase immediately
-        user_email = session['user_email']
+        # Payment is 100% legit! Upgrade the user in Firebase immediately.
         new_tier = data['tier']
-        course = data['course']
+        db.collection("users").document(session['user_email']).update({"subscription": new_tier})
+        session['subscription'] = new_tier # Update live browser session
         
-        user_ref = db.collection("users").document(user_email)
-        user_ref.update({
-            "subscription": new_tier, 
-            # We log the specific course they bought for future scaling
-            f"access_{course.replace(' ', '_')}": new_tier 
-        })
-        
-        # Update current browser session
-        session['subscription'] = new_tier
-        
-        return {"status": "Success", "message": f"Welcome to {new_tier}!"}
+        flash(f"Payment Successful! Welcome to the {new_tier} tier.")
+        return {"status": "Success"}
         
     except razorpay.errors.SignatureVerificationError:
-        return {"error": "Payment verification failed"}, 400
+        return {"error": "Payment verification failed. Signature mismatch."}, 400
     except Exception as e:
         return {"error": str(e)}, 500
 

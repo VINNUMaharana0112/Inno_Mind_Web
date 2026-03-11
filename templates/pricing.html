@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upgrade Subscription</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; color: #2c3e50; text-align: center; padding: 50px 20px; }
+        .pricing-container { display: flex; justify-content: center; gap: 30px; flex-wrap: wrap; max-width: 900px; margin: 40px auto; }
+        
+        .card { background: white; border-radius: 15px; padding: 40px 30px; width: 300px; box-shadow: 0 10px 20px rgba(0,0,0,0.05); transition: 0.3s; position: relative; overflow: hidden; }
+        .card:hover { transform: translateY(-10px); box-shadow: 0 15px 30px rgba(0,0,0,0.1); }
+        
+        .gold { border-top: 6px solid #f1c40f; }
+        .diamond { border-top: 6px solid #9b59b6; }
+        
+        .tier-name { font-size: 24px; font-weight: bold; margin-bottom: 10px; }
+        .gold-text { color: #f39c12; }
+        .diamond-text { color: #8e44ad; }
+        
+        .price { font-size: 40px; font-weight: bold; margin: 20px 0; color: #2c3e50; }
+        .currency { font-size: 20px; vertical-align: super; }
+        
+        .features { list-style: none; padding: 0; margin: 30px 0; text-align: left; }
+        .features li { margin-bottom: 15px; font-size: 15px; color: #7f8c8d; }
+        .features li::before { content: "✓"; color: #2ecc71; font-weight: bold; margin-right: 10px; }
+        
+        .btn { display: block; width: 100%; padding: 15px 0; border-radius: 30px; text-decoration: none; color: white; font-weight: bold; font-size: 16px; transition: 0.3s; border: none; cursor: pointer; }
+        .btn-gold { background: #f1c40f; }
+        .btn-gold:hover { background: #f39c12; }
+        .btn-diamond { background: #9b59b6; }
+        .btn-diamond:hover { background: #8e44ad; }
+        
+        .popular-badge { position: absolute; top: 15px; right: -35px; background: #e74c3c; color: white; font-size: 12px; font-weight: bold; padding: 5px 40px; transform: rotate(45deg); }
+    </style>
+</head>
+<body>
+
+    <h1 style="margin-bottom: 10px;">Level Up Your {{ course_name }} Prep</h1>
+    <p style="color: #7f8c8d; font-size: 18px;">Choose the plan that fits your study goals.</p>
+
+    <div class="pricing-container">
+        <div class="card gold">
+            <div class="tier-name gold-text">Gold Tier</div>
+            <div class="price"><span class="currency">₹</span>{{ course_pricing['Gold'] }}</div>
+            <ul class="features">
+                <li>Access to Premium Study Materials</li>
+                <li><strong>50 MCQs</strong> per day</li>
+                <li><strong>20 Descriptive Answers</strong> per day</li>
+                <li>Standard Analytics Dashboard</li>
+            </ul>
+            <a href="/checkout/Gold" class="btn btn-gold" style="text-align: center;">Upgrade to Gold</a>
+        </div>
+
+        <div class="card diamond">
+            <div class="popular-badge">MOST POPULAR</div>
+            <div class="tier-name diamond-text">Diamond Tier</div>
+            <div class="price"><span class="currency">₹</span>{{ course_pricing['Diamond'] }}</div>
+            <ul class="features">
+                <li>All Gold Features Included</li>
+                <li><strong>100 MCQs</strong> per day</li>
+                <li><strong>50 Descriptive Answers</strong> per day</li>
+                <li>Advanced Granular Analytics</li>
+                <li>Priority Evaluation</li>
+            </ul>
+            <a href="/checkout/Diamond" class="btn btn-diamond" style="text-align: center;">Upgrade to Diamond</a>
+        </div>
+    </div>
+    
+    <div style="margin-top: 30px;">
+        <a href="/" style="color: #3498db; text-decoration: none; font-weight: bold;">&larr; Back to Dashboard</a>
+    </div>
+
+</body>
+</html>

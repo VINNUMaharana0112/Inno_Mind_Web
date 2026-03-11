@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Student Dashboard - Inno Mind Academy</title>
+    <title>Student Dashboard - {{ institute.name }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -51,10 +51,31 @@
         <div class="stat-box"><h3>{{ acc }}%</h3><p>Accuracy</p></div>
     </div>
     
-    {% if session.get('subscription') == 'Silver' %}
-    <div class="upgrade-banner">
-        <p>⭐ You are currently on the free Silver plan. Upgrade to unlock more mock tests and daily MCQs!</p>
-        <a href="/upgrade" class="upgrade-btn">Upgrade to Gold/Diamond</a>
+    {% if not enrolled_course %}
+    <div style="background: #e74c3c; color: white; padding: 20px; border-radius: 10px; margin: 20px auto; max-width: 800px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <h3 style="margin-top: 0; margin-bottom: 10px;">⚠️ Action Required: Select Your Course</h3>
+        <p style="margin-bottom: 15px; font-size: 16px;">You haven't linked your account to a specific course yet. Please select your program below to unlock your study materials, exams, and pricing.</p>
+    
+        <form action="/set_course" method="POST" style="display: inline-block;">
+            <select name="selected_course" required style="padding: 10px; border-radius: 5px; font-size: 16px; border: none; margin-right: 10px; min-width: 250px;">
+                <option value="" disabled selected>-- Choose your course --</option>
+                {% for name, val in available_courses.items() %}
+                    <option value="{{ val }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" style="background-color: #2ecc71; color: white; padding: 10px 20px; border: none; border-radius: 5px; font-weight: bold; font-size: 16px; cursor: pointer; transition: 0.3s;">Save Course</button>
+        </form>
+    </div>
+    {% endif %}
+
+    {% if subscription == 'Free' or subscription == 'Silver' %}
+    <div style="background: linear-gradient(135deg, #f39c12, #e67e22); color: white; padding: 20px; border-radius: 10px; margin: 20px auto; max-width: 800px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <h3 style="margin-top: 0; margin-bottom: 10px;">🔒 Unlock Your Full Potential</h3>
+        <p style="margin-bottom: 15px; font-size: 16px;">You are currently on the <strong>{{ subscription }} Tier</strong>. Upgrade to get full access to premium mock tests, unlimited MCQs, and descriptive evaluations.</p>
+    
+        <a href="/pricing" style="background-color: white; color: #d35400; padding: 10px 25px; text-decoration: none; border-radius: 25px; font-weight: bold; font-size: 16px; display: inline-block; transition: 0.3s;">
+        View Pricing & Upgrade
+        </a>
     </div>
     {% endif %}
 

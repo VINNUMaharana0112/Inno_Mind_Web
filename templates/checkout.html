@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Secure Checkout</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; color: #2c3e50; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .checkout-box { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 450px; text-align: center; }
+        .header { font-size: 24px; font-weight: bold; margin-bottom: 5px; }
+        .sub-header { color: #7f8c8d; margin-bottom: 30px; }
+        
+        .order-summary { background: #f8f9fa; border-radius: 8px; padding: 20px; text-align: left; margin-bottom: 30px; border: 1px solid #ecf0f1; }
+        .summary-row { display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 16px; }
+        .total-row { display: flex; justify-content: space-between; font-size: 20px; font-weight: bold; border-top: 2px solid #bdc3c7; padding-top: 15px; margin-top: 5px; }
+        
+        .btn-pay { background: #3498db; color: white; border: none; padding: 15px; width: 100%; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .btn-pay:hover { background: #2980b9; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4); }
+        .btn-pay:disabled { background: #bdc3c7; cursor: not-allowed; transform: none; box-shadow: none; }
+        
+        .cancel-link { display: inline-block; margin-top: 20px; color: #95a5a6; text-decoration: none; font-size: 14px; }
+        .cancel-link:hover { text-decoration: underline; color: #e74c3c; }
+    </style>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+</head>
+<body>
+
+    <div class="checkout-box">
+        <div class="header">Order Summary</div>
+        <div class="sub-header">Secure Encrypted Checkout</div>
+        
+        <div class="order-summary">
+            <div class="summary-row">
+                <span>Course:</span>
+                <strong>{{ course_name }}</strong>
+            </div>
+            <div class="summary-row">
+                <span>Subscription Tier:</span>
+                <strong style="color: {% if tier == 'Diamond' %}#8e44ad{% else %}#f39c12{% endif %};">{{ tier }} Plan</strong>
+            </div>
+            
+            <div class="total-row">
+                <span>Total to Pay:</span>
+                <span>₹{{ price }}</span>
+            </div>
+        </div>
+
+        <button id="pay-btn" class="btn-pay" onclick="startPayment()">💳 Pay ₹{{ price }} Securely</button>
+        <p id="loading-msg" style="display:none; color:#f39c12; font-weight:bold; margin-top:10px;">Connecting to secure gateway...</p>
+        
+        <a href="/pricing" class="cancel-link">Cancel and return to pricing</a>
+    </div>
+
+    <script>
+        function startPayment() {
+            const btn = document.getElementById('pay-btn');
+            const msg = document.getElementById('loading-msg');
+            btn.disabled = true;
+            msg.style.display = 'block';
+
+            // 1. Ask Python to generate a secure Razorpay Order ID
+            fetch('/create_order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tier: "{{ tier }}" })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert("Error creating order: " + data.error);
+                    btn.disabled = false;
+                    msg.style.display = 'none';
+                    return;
+                }
+
+                // 2. Configure the Razorpay Popup
+                var options = {
+                    "key": data.key_id,
+                    "amount": data.amount,
+                    "currency": "INR",
+                    "name": "{{ course_name }} Prep",
+                    "description": "{{ tier }} Subscription",
+                    "order_id": data.order_id,
+                    "handler": function (response) {
+                        msg.innerText = "Verifying payment... Please do not close this window.";
+                        
+                        // 3. Payment went through! Send signature to Python to double-check
+                        fetch('/verify_payment', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                razorpay_order_id: response.razorpay_order_id,
+                                razorpay_payment_id: response.razorpay_payment_id,
+                                razorpay_signature: response.razorpay_signature,
+                                tier: "{{ tier }}"
+                            })
+                        })
+                        .then(res => res.json())
+                        .then(verifyData => {
+                            if(verifyData.status === "Success") {
+                                window.location.href = "/"; // Send them to the dashboard!
+                            } else {
+                                alert("Payment verification failed! " + verifyData.error);
+                            }
+                        });
+                    },
+                    "theme": { "color": "#3498db" }
+                };
+                
+                // Open the modal
+                var rzp1 = new Razorpay(options);
+                rzp1.open();
+                
+                rzp1.on('payment.failed', function (response){
+                    alert("Payment Failed: " + response.error.description);
+                    btn.disabled = false;
+                    msg.style.display = 'none';
+                });
+            })
+            .catch(error => {
+                alert("Network Error: Could not reach payment server.");
+                btn.disabled = false;
+                msg.style.display = 'none';
+            });
+        }
+    </script>
+</body>
+</html>
