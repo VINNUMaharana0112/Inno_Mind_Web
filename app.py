@@ -12,7 +12,6 @@ import hashlib
 from datetime import datetime
 import razorpay
 
-
 app = Flask(__name__)
 app.secret_key = "inno_mind_super_secret_key" 
 
@@ -20,7 +19,19 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 KEY_PATH = os.path.join(SCRIPT_DIR, "PSC_Data_Vault", "firebase_key.json")
 CLOUD_BUCKET_NAME = "psc-smart-preparation-app"
 
-# --- SUBSCRIPTION LIMITS (Needed for the Web App Paywall) ---
+# ================= SMART FORMATTING ENGINE =================
+def format_smart_tags(text):
+    if not text:
+        return ""
+    # Find the exact PDF text tag and replace it with a styled HTML button
+    pdf_pattern = r'\[📄 Attached PDF: (https?://[^\s\]]+)\]'
+    pdf_html = r'<br><a href="\1" target="_blank" class="inno-pdf-btn"><i class="fas fa-file-pdf"></i> View / Download PDF Document</a><br>'
+    return re.sub(pdf_pattern, pdf_html, text)
+
+# Register it with Flask for any stray HTML templates
+app.jinja_env.filters['format_smart'] = format_smart_tags
+
+# --- SUBSCRIPTION LIMITS ---
 SUBSCRIPTION_LIMITS = {
     "Free": {"mcq": 0, "descriptive": 0}, 
     "Silver": {"mcq": 10, "descriptive": 2}, 
@@ -139,7 +150,6 @@ def login():
         email = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '').strip()
         
-        # --- SAFETY NET ---
         if not email or not password:
             flash("Please enter both email and password.")
             return render_template('login.html')
@@ -157,7 +167,6 @@ def login():
                 session['subscription'] = user_data.get("subscription", "Free")
                 session['enrolled_course'] = user_data.get("enrolled_course")
                 
-                # We don't flash "Welcome back" here because it immediately redirects to the dashboard
                 return redirect(url_for('home'))
             else:
                 flash("Invalid email or password.")
@@ -176,7 +185,6 @@ def register():
         password = request.form.get('password', '').strip()
         enrolled_course = request.form.get('enrolled_course', '')
         
-        # --- SAFETY NET ---
         if not email or not password:
             flash("Error: Email and Password are required fields!")
             return redirect(url_for('register'))
@@ -196,7 +204,6 @@ def register():
         }
         db.collection("users").document(email).set(user_data)
         
-        # This message will now successfully display on the login page!
         flash("Registration successful! Please log in with your new credentials.")
         return redirect(url_for('login'))
         
@@ -221,7 +228,6 @@ def forgot_password():
         phone = request.form.get('phone', '').strip()
         new_password = request.form.get('new_password', '').strip()
         
-        # Safety Net
         if not email or not phone or not new_password:
             flash("All fields are required to reset your password.")
             return redirect(url_for('forgot_password'))
@@ -232,9 +238,7 @@ def forgot_password():
         if user_doc.exists:
             user_data = user_doc.to_dict()
             
-            # THE VERIFICATION: Does the phone number match the database?
             if user_data.get('phone') == phone:
-                # Scramble the new password and update the database!
                 hashed_password = generate_password_hash(new_password)
                 user_ref.update({"password": hashed_password})
                 
@@ -292,8 +296,14 @@ def study():
         
         tree[c][s][b][u][t].append({'id': doc.id, 'subtopic': st})
         
+        # --- BULLETPROOF PDF INTEGRATION ---
+        # 1. Convert newlines to HTML breaks
         raw_body = d.get('body', '').replace('\n', '<br>')
+        # 2. Convert standard Images
         html_body = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-width:100%; border-radius:8px; margin:15px 0; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">', raw_body)
+        # 3. Convert PDFs using our Python engine before sending to the frontend!
+        html_body = format_smart_tags(html_body)
+        
         content_dict[doc.id] = {'breadcrumbs': f"{c} &rarr; {s} &rarr; {t}", 'title': st, 'body': html_body}
 
     def generate_tree_html(node, depth=0, prefix="tier"):
@@ -387,18 +397,25 @@ def take_exam():
                 smart_q['q_hash'] = q_fingerprint
                 smart_q['meta'] = {'course': d.get('course', 'Uncategorized'), 'subject': d.get('subject', 'General'), 'block': d.get('block', 'Block'), 'unit': d.get('unit', 'Unit'), 'topic': d.get('topic', 'Topic')}
                 
+                # --- BULLETPROOF EXAM PDF INTEGRATION ---
+                # Format Question Text
                 raw_q = smart_q.get('q', '').replace('\n', '<br>')
-                smart_q['q_html'] = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-width:100%; border-radius:5px; margin:10px 0;">', raw_q)
+                img_parsed_q = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-width:100%; border-radius:5px; margin:10px 0;">', raw_q)
+                smart_q['q_html'] = format_smart_tags(img_parsed_q) 
                 
+                # Format Explanation Text
                 raw_exp = smart_q.get('exp', 'No explanation provided.').replace('\n', '<br>')
-                smart_q['exp_html'] = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-height:100px; display:block; margin:10px 0;">', raw_exp)
+                img_parsed_exp = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-height:100px; display:block; margin:10px 0;">', raw_exp)
+                smart_q['exp_html'] = format_smart_tags(img_parsed_exp)
                 
+                # Format Multiple Choice Options
                 if smart_q.get('type') == 'MCQ':
                     processed_opts = []
                     for opt in smart_q.get('opts', []):
                         opt_html = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-height:80px; vertical-align:middle;">', opt)
-                        processed_opts.append(opt_html)
+                        processed_opts.append(format_smart_tags(opt_html)) # Apply PDF engine to options too!
                     smart_q['opts_html'] = processed_opts
+                    
                 master_qs.append(smart_q)
 
     active_test_qs = []
@@ -516,7 +533,6 @@ def submit_exam():
     }
     db.collection("student_results").add(result_data)
     
-    # Clear session memory of the test
     session.pop('active_test_qs', None)
     
     return render_template('exam_review.html', score=final_mcq_score, correct=mcq_correct, wrong=mcq_wrong, review_data=review_data)
@@ -567,7 +583,7 @@ def checkout(tier):
 
 # ================= REAL PAYMENT GATEWAY (RAZORPAY) =================
 
-# 1. Initialize Razorpay (Using the TEST keys you provided earlier)
+# ⚠️ WHEN READY FOR LAUNCH: Swap these test keys for your Live Razorpay Keys!
 RAZORPAY_KEY_ID = "rzp_test_SNVpSbsF9gb8ti"
 RAZORPAY_KEY_SECRET = "mwTzPIeteaf8DjQQsbJJJVlY"
 rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
@@ -580,7 +596,6 @@ def create_order():
     tier = data.get('tier')
     enrolled_course = session.get('enrolled_course')
     
-    # Securely fetch the live price from Firebase (Server-side check so users can't fake prices)
     pricing_doc = db.collection("admin_settings").document("platform_pricing").get()
     amount_inr = 0
     
@@ -595,7 +610,6 @@ def create_order():
                 
     if amount_inr <= 0: return {"error": "Invalid price configuration."}, 400
     
-    # Razorpay requires the amount in PAISE (₹1 = 100 Paise)
     amount_paise = amount_inr * 100 
     
     order_data = {
@@ -616,17 +630,15 @@ def verify_payment():
     
     data = request.json
     try:
-        # Cryptographically verify the signature so students can't fake a success screen!
         rzp_client.utility.verify_payment_signature({
             'razorpay_order_id': data['razorpay_order_id'],
             'razorpay_payment_id': data['razorpay_payment_id'],
             'razorpay_signature': data['razorpay_signature']
         })
         
-        # Payment is 100% legit! Upgrade the user in Firebase immediately.
         new_tier = data['tier']
         db.collection("users").document(session['user_email']).update({"subscription": new_tier})
-        session['subscription'] = new_tier # Update live browser session
+        session['subscription'] = new_tier 
         
         flash(f"Payment Successful! Welcome to the {new_tier} tier.")
         return {"status": "Success"}
