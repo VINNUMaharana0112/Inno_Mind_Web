@@ -584,8 +584,8 @@ def checkout(tier):
 # ================= REAL PAYMENT GATEWAY (RAZORPAY) =================
 
 # ⚠️ WHEN READY FOR LAUNCH: Swap these test keys for your Live Razorpay Keys!
-RAZORPAY_KEY_ID = "rzp_test_SNVpSbsF9gb8ti"
-RAZORPAY_KEY_SECRET = "mwTzPIeteaf8DjQQsbJJJVlY"
+RAZORPAY_KEY_ID = "rzp_live_SVMJshjiBfFfkr"
+RAZORPAY_KEY_SECRET = "v4PooXzferJIdvStE20ZOULg"
 rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
 @app.route('/create_order', methods=['POST'])
