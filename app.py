@@ -23,9 +23,12 @@ CLOUD_BUCKET_NAME = "psc-smart-preparation-app"
 def format_smart_tags(text):
     if not text:
         return ""
-    # Find the exact PDF text tag and replace it with a styled HTML button
+    # Find the exact PDF text tag
     pdf_pattern = r'\[📄 Attached PDF: (https?://[^\s\]]+)\]'
-    pdf_html = r'<br><a href="\1" target="_blank" class="inno-pdf-btn"><i class="fas fa-file-pdf"></i> View / Download PDF Document</a><br>'
+    
+    # NEW: Trigger a secure Javascript Modal instead of opening a raw new tab
+    pdf_html = r'<br><a href="javascript:void(0);" onclick="openSecurePDF(\'\1\')" class="inno-pdf-btn"><i class="fas fa-file-pdf"></i> 📄 View PDF Document</a><br>'
+    
     return re.sub(pdf_pattern, pdf_html, text)
 
 # Register it with Flask for any stray HTML templates

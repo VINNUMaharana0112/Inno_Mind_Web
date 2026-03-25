@@ -131,5 +131,46 @@
             }
         }
     </script>
+<div id="pdfModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:99999; flex-direction:column;">
+        
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:15px 25px; background:#2c3e50; border-bottom:2px solid #e74c3c;">
+            <div style="color:white; font-weight:bold; font-size:16px;">
+                <i class="fas fa-lock" style="color:#f1c40f; margin-right:8px;"></i> Secure View Mode
+            </div>
+            <button onclick="closeSecurePDF()" style="background:#e74c3c; color:white; border:none; padding:8px 20px; border-radius:5px; font-weight:bold; cursor:pointer; font-size:14px;">
+                Close Viewer &times;
+            </button>
+        </div>
+
+        <div style="flex-grow:1; width:100%; height:100%; position:relative;" oncontextmenu="return false;">
+            <div style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:10; pointer-events:none;"></div>
+            
+            <iframe id="pdfFrame" src="" style="width:100%; height:100%; border:none;"></iframe>
+        </div>
+    </div>
+
+    <script>
+        function openSecurePDF(pdfUrl) {
+            // Show the modal
+            const modal = document.getElementById('pdfModal');
+            modal.style.display = 'flex';
+            
+            // We append #toolbar=0 to the URL. This forces Google Chrome and Edge 
+            // to hide the top toolbar containing the "Download" and "Print" buttons.
+            const secureUrl = pdfUrl + "#toolbar=0&navpanes=0&scrollbar=0";
+            document.getElementById('pdfFrame').src = secureUrl;
+        }
+
+        function closeSecurePDF() {
+            // Hide modal and clear the source to stop downloading
+            document.getElementById('pdfModal').style.display = 'none';
+            document.getElementById('pdfFrame').src = "";
+        }
+
+        // Globally disable right-click anywhere inside the modal
+        document.getElementById('pdfModal').addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+        });
+    </script>
 </body>
 </html>
