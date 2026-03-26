@@ -616,6 +616,18 @@ def submit_exam():
     
     return render_template('exam_review.html', score=final_mcq_score, correct=mcq_correct, wrong=mcq_wrong, review_data=review_data)
 
+@app.route('/privacy-policy')
+def privacy():
+    return render_template('privacy.html')
+
+@app.route('/refund-policy')
+def refund():
+    return render_template('refund.html')
+
+@app.route('/terms')
+def terms():
+    return render_template('terms.html')
+
 # ================= PRICING & PAYMENT SIMULATOR =================
 
 
