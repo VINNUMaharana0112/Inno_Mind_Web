@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, send_file
+from flask import Flask, render_template, request, redirect, session, url_for, jsonify
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -34,14 +34,6 @@ def format_smart_tags(text):
 # Register it with Flask for any stray HTML templates
 app.jinja_env.filters['format_smart'] = format_smart_tags
 
-# --- SUBSCRIPTION LIMITS ---
-SUBSCRIPTION_LIMITS = {
-    "Free": {"mcq": 0, "descriptive": 0}, 
-    "Silver": {"mcq": 10, "descriptive": 2}, 
-    "Gold": {"mcq": 50, "descriptive": 20}, 
-    "Diamond": {"mcq": 100, "descriptive": 50}, 
-    "Admin": {"mcq": 9999, "descriptive": 9999}
-}
 
 if not firebase_admin._apps:
     try:
@@ -276,7 +268,7 @@ def set_course():
 @app.route('/pricing')
 def pricing():
     # 1. Secure Session Check
-    student_email = session.get('user') or session.get('email') or session.get('student')
+    student_email = session.get('user_email') or session.get('user') or session.get('email') or session.get('student')
     if not student_email:
         return redirect(url_for('login'))
         
@@ -626,32 +618,40 @@ def submit_exam():
 
 # ================= PRICING & PAYMENT SIMULATOR =================
 
-@app.route('/pricing')
-def pricing():
+
+@app.route('/checkout/<tier>')
+def checkout(tier):
     if 'user_email' not in session: return redirect(url_for('login'))
     enrolled_course = session.get('enrolled_course')
-    if not enrolled_course:
-        flash("You need to be enrolled in a course to view pricing.")
-        return redirect(url_for('home'))
-
     pricing_doc = db.collection("admin_settings").document("platform_pricing").get()
-    course_pricing = {"Gold": "Contact Admin", "Diamond": "Contact Admin"} 
-    
+    price = "0"
+
     if pricing_doc.exists:
         all_pricing = pricing_doc.to_dict().get("courses", {})
         target = str(enrolled_course).strip().lower().replace("_", "").replace(" ", "")
         for key, prices in all_pricing.items():
             db_key = str(key).strip().lower().replace("_", "").replace(" ", "")
             if db_key == target:
-                course_pricing = prices
+                price = prices.get(tier, "0")
                 break
 
     display_name = str(enrolled_course).replace("_", " ").title()
-    return render_template('pricing.html', course_pricing=course_pricing, course_name=display_name)
+    return render_template('checkout.html', tier=tier, price=price, course_name=display_name)
+
+# ================= REAL PAYMENT GATEWAY (RAZORPAY) =================
+# Security Protocol: 
+# os.environ.get() asks the Render server for the secret live keys.
+# If it can't find them (because you are running it locally on your laptop), 
+# it safely defaults to your Test Keys.
+
+RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'rzp_test_SVsOLwS887kkCL') 
+RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '0GX3Nce0ZaU06IvJfpiQJZgN')
+
+rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
 @app.route('/create_order', methods=['POST'])
 def create_order():
-    student_email = session.get('user') or session.get('email') or session.get('student')
+    student_email = session.get('user_email') or session.get('user') or session.get('email') or session.get('student')
     if not student_email: return jsonify({"error": "Not logged in"}), 401
     if isinstance(student_email, dict): student_email = student_email.get('email', '')
 
@@ -694,7 +694,7 @@ def create_order():
 
 @app.route('/verify_payment', methods=['POST'])
 def verify_payment():
-    student_email = session.get('user') or session.get('email') or session.get('student')
+    student_email = session.get('user_email') or session.get('user') or session.get('email') or session.get('student')
     if isinstance(student_email, dict): student_email = student_email.get('email', '')
 
     data = request.json
@@ -723,97 +723,6 @@ def verify_payment():
         return jsonify({"status": "failed", "error": "Payment Verification Failed!"}), 400
     except Exception as e:
         return jsonify({"status": "failed", "error": str(e)}), 500
-
-@app.route('/checkout/<tier>')
-def checkout(tier):
-    if 'user_email' not in session: return redirect(url_for('login'))
-    enrolled_course = session.get('enrolled_course')
-    pricing_doc = db.collection("admin_settings").document("platform_pricing").get()
-    price = "0"
-
-    if pricing_doc.exists:
-        all_pricing = pricing_doc.to_dict().get("courses", {})
-        target = str(enrolled_course).strip().lower().replace("_", "").replace(" ", "")
-        for key, prices in all_pricing.items():
-            db_key = str(key).strip().lower().replace("_", "").replace(" ", "")
-            if db_key == target:
-                price = prices.get(tier, "0")
-                break
-
-    display_name = str(enrolled_course).replace("_", " ").title()
-    return render_template('checkout.html', tier=tier, price=price, course_name=display_name)
-
-# ================= REAL PAYMENT GATEWAY (RAZORPAY) =================
-
-# 🔴 LIVE KEYS (Commented out for safety during testing - DO NOT DELETE)
-# RAZORPAY_KEY_ID = "rzp_live_xxxxxxxxxxxxxxxxxx"
-# RAZORPAY_KEY_SECRET = "xxxxxxxxxxxxxxx"
-
-# 🟢 TEST KEYS (Active for development)
-RAZORPAY_KEY_ID = "rzp_test_SVsOLwS887kkCL"  # <--- Paste your rzp_test_ key here
-RAZORPAY_KEY_SECRET = "0GX3Nce0ZaU06IvJfpiQJZgN"    # <--- Paste your test secret here
-
-rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
-
-@app.route('/create_order', methods=['POST'])
-def create_order():
-    if 'user_email' not in session: return {"error": "Unauthorized"}, 401
-    
-    data = request.json
-    tier = data.get('tier')
-    enrolled_course = session.get('enrolled_course')
-    
-    pricing_doc = db.collection("admin_settings").document("platform_pricing").get()
-    amount_inr = 0
-    
-    if pricing_doc.exists:
-        all_pricing = pricing_doc.to_dict().get("courses", {})
-        target = str(enrolled_course).strip().lower().replace("_", "").replace(" ", "")
-        for key, prices in all_pricing.items():
-            db_key = str(key).strip().lower().replace("_", "").replace(" ", "")
-            if db_key == target:
-                amount_inr = int(prices.get(tier, 0))
-                break
-                
-    if amount_inr <= 0: return {"error": "Invalid price configuration."}, 400
-    
-    amount_paise = amount_inr * 100 
-    
-    order_data = {
-        "amount": amount_paise,
-        "currency": "INR",
-        "receipt": f"rcpt_{session['user_email'].split('@')[0][:10]}_{tier[:3]}"
-    }
-    
-    try:
-        order = rzp_client.order.create(data=order_data)
-        return {"order_id": order['id'], "amount": amount_paise, "key_id": RAZORPAY_KEY_ID, "tier": tier}
-    except Exception as e:
-        return {"error": str(e)}, 500
-
-@app.route('/verify_payment', methods=['POST'])
-def verify_payment():
-    if 'user_email' not in session: return {"error": "Unauthorized"}, 401
-    
-    data = request.json
-    try:
-        rzp_client.utility.verify_payment_signature({
-            'razorpay_order_id': data['razorpay_order_id'],
-            'razorpay_payment_id': data['razorpay_payment_id'],
-            'razorpay_signature': data['razorpay_signature']
-        })
-        
-        new_tier = data['tier']
-        db.collection("users").document(session['user_email']).update({"subscription": new_tier})
-        session['subscription'] = new_tier 
-        
-        flash(f"Payment Successful! Welcome to the {new_tier} tier.")
-        return {"status": "Success"}
-        
-    except razorpay.errors.SignatureVerificationError:
-        return {"error": "Payment verification failed. Signature mismatch."}, 400
-    except Exception as e:
-        return {"error": str(e)}, 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
