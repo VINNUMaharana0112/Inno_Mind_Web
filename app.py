@@ -334,15 +334,25 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 
 @app.route('/calendar')
 def campus_calendar():
-    if 'user' not in session:
+    # 1. Check if the student is logged in (Checking both 'email' and 'user' just in case)
+    if 'email' not in session and 'user' not in session:
         return redirect(url_for('login'))
         
-    user_data = session['user']
-    enrolled_course = user_data.get('enrolled_course', '')
+    # 2. Safely get the student's email from the session
+    student_email = session.get('email') or session.get('user')
     
+    # 3. Fetch their exact enrolled course directly from Firestore
+    enrolled_course = ""
+    if isinstance(student_email, str): # If it's a normal email string
+        user_doc = db.collection("users").document(student_email).get()
+        if user_doc.exists:
+            enrolled_course = user_doc.to_dict().get('enrolled_course', '')
+    elif isinstance(student_email, dict): # Fallback if session saved a whole dictionary
+        enrolled_course = student_email.get('enrolled_course', '')
+
     events = []
     try:
-        # Fetch only events tagged for this student's specific course
+        # 4. Fetch only events tagged for this student's specific course
         events_stream = db.collection("calendar_events")\
             .where(filter=FieldFilter("target_courses", "array_contains", enrolled_course))\
             .stream()
@@ -350,13 +360,15 @@ def campus_calendar():
         for doc in events_stream:
             events.append(doc.to_dict())
             
-        # Sort the events chronologically by date
+        # 5. Sort the events chronologically by date
         events.sort(key=lambda x: x.get('date', '9999-12-31'))
         
     except Exception as e:
         print(f"Calendar Sync Error: {e}")
         
-    return render_template('calendar.html', user=user_data, events=events)
+    # 6. Pass the data to the HTML template
+    user_data_for_template = {'enrolled_course': enrolled_course}
+    return render_template('calendar.html', user=user_data_for_template, events=events)
 
 @app.route('/asset/<filename>')
 def serve_asset(filename):
