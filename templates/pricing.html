@@ -1,73 +1,95 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Upgrade Subscription</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upgrade Your Preparation | Inno Mind OS</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; color: #2c3e50; text-align: center; padding: 50px 20px; }
-        .pricing-container { display: flex; justify-content: center; gap: 30px; flex-wrap: wrap; max-width: 900px; margin: 40px auto; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f6f9; margin: 0; padding: 20px; color: #2c3e50; }
+        .header { text-align: center; margin-bottom: 40px; padding: 20px; }
+        .header h1 { font-size: 36px; color: #2c3e50; margin-bottom: 10px; }
+        .header p { font-size: 18px; color: #7f8c8d; }
+
+        .pricing-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 30px; max-width: 1200px; margin: 0 auto; }
         
-        .card { background: white; border-radius: 15px; padding: 40px 30px; width: 300px; box-shadow: 0 10px 20px rgba(0,0,0,0.05); transition: 0.3s; position: relative; overflow: hidden; }
-        .card:hover { transform: translateY(-10px); box-shadow: 0 15px 30px rgba(0,0,0,0.1); }
+        .pricing-card { background: white; border-radius: 15px; padding: 30px; width: 300px; box-shadow: 0 10px 20px rgba(0,0,0,0.05); transition: transform 0.3s, box-shadow 0.3s; position: relative; border-top: 5px solid #3498db; display: flex; flex-direction: column; }
+        .pricing-card:hover { transform: translateY(-10px); box-shadow: 0 15px 30px rgba(0,0,0,0.1); }
         
-        .gold { border-top: 6px solid #f1c40f; }
-        .diamond { border-top: 6px solid #9b59b6; }
+        /* Highlight the most expensive/premium plan with a different color */
+        .pricing-card:nth-child(even) { border-top: 5px solid #e67e22; }
+        .pricing-card:nth-child(3n) { border-top: 5px solid #9b59b6; }
+
+        .pkg-name { font-size: 22px; font-weight: bold; margin-bottom: 10px; }
+        .pkg-price { font-size: 40px; font-weight: bold; margin-bottom: 5px; color: #2c3e50; }
+        .pkg-price span { font-size: 16px; color: #7f8c8d; font-weight: normal; }
+        .pkg-target { display: inline-block; background: #ecf0f1; padding: 5px 10px; border-radius: 15px; font-size: 12px; font-weight: bold; color: #34495e; margin-bottom: 20px; text-transform: uppercase; }
+
+        .features-list { list-style: none; padding: 0; margin: 0 0 30px 0; flex-grow: 1; }
+        .features-list li { margin-bottom: 15px; font-size: 15px; color: #555; display: flex; align-items: center; }
+        .features-list li i { color: #2ecc71; margin-right: 10px; font-size: 18px; }
+
+        .btn-upgrade { display: block; text-align: center; background: #3498db; color: white; text-decoration: none; padding: 15px; border-radius: 8px; font-weight: bold; font-size: 16px; transition: 0.2s; border: none; cursor: pointer; width: 100%; box-sizing: border-box; }
+        .btn-upgrade:hover { background: #2980b9; }
         
-        .tier-name { font-size: 24px; font-weight: bold; margin-bottom: 10px; }
-        .gold-text { color: #f39c12; }
-        .diamond-text { color: #8e44ad; }
-        
-        .price { font-size: 40px; font-weight: bold; margin: 20px 0; color: #2c3e50; }
-        .currency { font-size: 20px; vertical-align: super; }
-        
-        .features { list-style: none; padding: 0; margin: 30px 0; text-align: left; }
-        .features li { margin-bottom: 15px; font-size: 15px; color: #7f8c8d; }
-        .features li::before { content: "✓"; color: #2ecc71; font-weight: bold; margin-right: 10px; }
-        
-        .btn { display: block; width: 100%; padding: 15px 0; border-radius: 30px; text-decoration: none; color: white; font-weight: bold; font-size: 16px; transition: 0.3s; border: none; cursor: pointer; }
-        .btn-gold { background: #f1c40f; }
-        .btn-gold:hover { background: #f39c12; }
-        .btn-diamond { background: #9b59b6; }
-        .btn-diamond:hover { background: #8e44ad; }
-        
-        .popular-badge { position: absolute; top: 15px; right: -35px; background: #e74c3c; color: white; font-size: 12px; font-weight: bold; padding: 5px 40px; transform: rotate(45deg); }
+        .btn-current { background: #95a5a6; cursor: not-allowed; }
+        .btn-current:hover { background: #95a5a6; }
+
+        .back-link { display: block; text-align: center; margin-top: 40px; color: #7f8c8d; text-decoration: none; font-weight: bold; }
+        .back-link:hover { color: #2c3e50; }
     </style>
 </head>
 <body>
 
-    <h1 style="margin-bottom: 10px;">Level Up Your {{ course_name }} Prep</h1>
-    <p style="color: #7f8c8d; font-size: 18px;">Choose the plan that fits your study goals.</p>
-
-    <div class="pricing-container">
-        <div class="card gold">
-            <div class="tier-name gold-text">Gold Tier</div>
-            <div class="price"><span class="currency">₹</span>{{ course_pricing['Gold'] }}</div>
-            <ul class="features">
-                <li>Access to Premium Study Materials</li>
-                <li><strong>50 MCQs</strong> per day</li>
-                <li><strong>20 Descriptive Answers</strong> per day</li>
-                <li>Standard Analytics Dashboard</li>
-            </ul>
-            <a href="/checkout/Gold" class="btn btn-gold" style="text-align: center;">Upgrade to Gold</a>
-        </div>
-
-        <div class="card diamond">
-            <div class="popular-badge">MOST POPULAR</div>
-            <div class="tier-name diamond-text">Diamond Tier</div>
-            <div class="price"><span class="currency">₹</span>{{ course_pricing['Diamond'] }}</div>
-            <ul class="features">
-                <li>All Gold Features Included</li>
-                <li><strong>100 MCQs</strong> per day</li>
-                <li><strong>50 Descriptive Answers</strong> per day</li>
-                <li>Advanced Granular Analytics</li>
-                <li>Priority Evaluation</li>
-            </ul>
-            <a href="/checkout/Diamond" class="btn btn-diamond" style="text-align: center;">Upgrade to Diamond</a>
-        </div>
+    <div class="header">
+        <h1>Elevate Your Preparation</h1>
+        <p>Choose the package that perfectly aligns with your target exam.</p>
     </div>
-    
-    <div style="margin-top: 30px;">
-        <a href="/" style="color: #3498db; text-decoration: none; font-weight: bold;">&larr; Back to Dashboard</a>
+
+    <div class="pricing-grid">
+        {% if packages %}
+            {% for pkg in packages %}
+            <div class="pricing-card">
+                <div class="pkg-name">{{ pkg.name }}</div>
+                <div class="pkg-target">Target: {{ pkg.target_course.replace('_', ' ') }}</div>
+                <div class="pkg-price">₹{{ pkg.price }}<span> / {{ pkg.validity_days }} Days</span></div>
+                
+                <ul class="features-list">
+                    <li><i class="fas fa-check-circle"></i> {{ pkg.mcq_limit }} Live MCQs per day</li>
+                    
+                    {% if pkg.desc_limit > 0 %}
+                    <li><i class="fas fa-check-circle"></i> {{ pkg.desc_limit }} Descriptive Checks/mo</li>
+                    {% endif %}
+
+                    {% if 'Vault' in pkg.features %}
+                    <li><i class="fas fa-check-circle"></i> Full Study Vault Access</li>
+                    {% endif %}
+
+                    {% if 'Exams' in pkg.features %}
+                    <li><i class="fas fa-check-circle"></i> Live Exam Engine</li>
+                    {% endif %}
+
+                    {% if 'Whiteboards' in pkg.features %}
+                    <li><i class="fas fa-check-circle"></i> Live Class Whiteboards</li>
+                    {% endif %}
+                </ul>
+
+                {% if current_plan == pkg.id %}
+                    <button class="btn-upgrade btn-current" disabled><i class="fas fa-star"></i> Current Plan</button>
+                {% else %}
+                    <a href="#" class="btn-upgrade">Enroll Now</a>
+                {% endif %}
+            </div>
+            {% endfor %}
+        {% else %}
+            <div style="text-align: center; color: #7f8c8d; width: 100%;">
+                <h2>No premium packages available right now.</h2>
+                <p>Please check back later or contact your administrator.</p>
+            </div>
+        {% endif %}
     </div>
+
+    <a href="/" class="back-link"><i class="fas fa-arrow-left"></i> Return to Dashboard</a>
 
 </body>
 </html>

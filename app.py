@@ -273,6 +273,43 @@ def set_course():
         flash("Please select a valid course.")
     return redirect(url_for('home'))
 
+@app.route('/pricing')
+def pricing():
+    # 1. Secure Session Check
+    student_email = session.get('user') or session.get('email') or session.get('student')
+    if not student_email:
+        return redirect(url_for('login'))
+        
+    if isinstance(student_email, dict):
+        student_email = student_email.get('email', '')
+
+    current_plan = "default_free"
+    packages = []
+    
+    try:
+        # 2. Get the student's current active plan
+        user_doc = db.collection("users").document(student_email).get()
+        if user_doc.exists:
+            current_plan = user_doc.to_dict().get('subscription', 'default_free')
+
+        # 3. Fetch all ACTIVE subscription packages from the database
+        pkg_stream = db.collection("subscription_packages")\
+            .where(filter=FieldFilter("status", "==", "active"))\
+            .stream()
+            
+        for doc in pkg_stream:
+            pkg_data = doc.to_dict()
+            pkg_data['id'] = doc.id # Save the document ID so we know which one they are clicking
+            packages.append(pkg_data)
+            
+        # 4. Sort the packages by price (Lowest to Highest)
+        packages.sort(key=lambda x: x.get('price', 0))
+        
+    except Exception as e:
+        print(f"Pricing Sync Error: {e}")
+
+    return render_template('pricing.html', packages=packages, current_plan=current_plan)
+
 # ================= STUDY VAULT =================
 
 @app.route('/study')
