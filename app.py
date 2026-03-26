@@ -469,21 +469,27 @@ def take_exam():
     except Exception as e: 
         print(f"DEBUG: Seen Qs Error: {e}")
 
-    # --- 4. THE DATA FETCH (Safety Gate 1: Collection Name) ---
-    # We check both 'opsc_content' and 'questions' to be safe
+    # --- 4. THE DATA FETCH (Smart Course Matching) ---
     master_qs = []
     collections_to_check = ["questions", "opsc_content"]
     
+    # Force everything to lowercase for safe comparing
+    safe_enrolled = enrolled_course.lower() if enrolled_course else ""
+
     for coll in collections_to_check:
-        docs = db.collection(coll).where('course', '==', enrolled_course).stream()
+        # Fetch all questions (we will filter them instantly in Python)
+        docs = db.collection(coll).stream()
+        
         for doc in docs:
             d = doc.to_dict()
-            # If the doc is a single question (from Bulk Upload)
-            if 'question' in d:
-                q_list = [d]
-            else:
-                # If the doc is a bundle (from Manual Admin)
-                q_list = d.get('questions', [])
+            
+            # Check if the DB course (e.g. 'ipmat') is inside the enrolled course (e.g. 'ipmat_2026')
+            db_course = d.get('course', '').lower()
+            if not db_course or db_course not in safe_enrolled:
+                continue # Skip if it doesn't match
+
+            # Handle both CSV format and Manual Bundle format
+            q_list = [d] if 'question' in d else d.get('questions', [])
 
             for q in q_list:
                 q_type = q.get('type', 'MCQ')
@@ -497,7 +503,6 @@ def take_exam():
                     smart_q = q.copy()
                     smart_q['q_hash'] = q_fingerprint
                     
-                    # Ensure Meta exists for breakdown
                     smart_q['meta'] = {
                         'course': d.get('course', enrolled_course),
                         'subject': d.get('subject', q.get('subject', 'General')),
@@ -506,18 +511,14 @@ def take_exam():
                         'topic': d.get('topic', q.get('topic', 'Misc'))
                     }
                     
-                    # Formatting logic (Keeping your existing re.sub code)
                     raw_q = q_text.replace('\n', '<br>')
                     smart_q['q_html'] = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-width:100%;">', raw_q)
                     
                     if q_type == 'MCQ':
-                        # Handle both 'opts' list and 'a,b,c,d' keys
                         if 'opts' in q:
                             smart_q['opts_html'] = q['opts']
                         else:
                             smart_q['opts_html'] = [q.get('a',''), q.get('b',''), q.get('c',''), q.get('d','')]
-                        
-                        # Fix for the answer key
                         smart_q['ans'] = q.get('answer') or q.get('ans')
 
                     master_qs.append(smart_q)
@@ -549,6 +550,31 @@ def take_exam():
     session['neg_mark'] = neg_mark
     
     return render_template('live_exam.html', questions=active_test_qs, time_left=timer)
+
+# 1. THE CONFIGURATION PAGE
+@app.route('/exam_config')
+def exam_config():
+    if 'user_email' not in session: 
+        return redirect(url_for('login'))
+    # Ensure the template name matches your file name exactly
+    return render_template('exam_config.html')
+
+# 2. THE LIVE BOARD SYNC (Fixes the other 404 in your log)
+@app.route('/get_live_board')
+def get_live_board():
+    doc = db.collection("live_sessions").document("current_solution").get()
+    if doc.exists:
+        return jsonify(doc.to_dict())
+    return jsonify({"image": None})
+
+@app.route('/update_live_board', methods=['POST'])
+def update_live_board():
+    data = request.json
+    db.collection("live_sessions").document("current_solution").set({
+        "image": data.get('image'),
+        "timestamp": firestore.SERVER_TIMESTAMP
+    })
+    return jsonify({"success": True})
 
 @app.route('/privacy-policy')
 def privacy():

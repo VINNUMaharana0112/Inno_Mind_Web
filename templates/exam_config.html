@@ -118,11 +118,12 @@
             }
         }
 
-        // 2. Prevent Double Submission
+        // 2. Prevent Double Submission (Fixed)
         document.getElementById('configForm').onsubmit = function() {
             const btn = document.getElementById('submitBtn');
             btn.innerHTML = "Finding Questions... Please Wait";
-            btn.disabled = true;
+            // Wait 10 milliseconds before disabling so the form can actually submit
+            setTimeout(() => { btn.disabled = true; }, 10);
             return true;
         };
     </script>
