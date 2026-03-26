@@ -12,21 +12,22 @@
         label { display: block; font-weight: bold; color: #34495e; margin-bottom: 5px; }
         input[type="text"], input[type="number"] { padding: 10px; border: 1px solid #bdc3c7; border-radius: 5px; box-sizing: border-box; }
         
-        /* THE BLUEPRINT CSS */
+        /* BLUEPRINT DESIGN */
         .blueprint-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; background: #f8f9fa; padding: 10px; border-radius: 8px; border: 1px dashed #bdc3c7; }
-        .remove-btn { background: #e74c3c; color: white; border: none; border-radius: 5px; width: 35px; height: 35px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .remove-btn { background: #e74c3c; color: white; border: none; border-radius: 5px; width: 35px; height: 35px; font-weight: bold; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; }
         .remove-btn:hover { background: #c0392b; }
         .add-row-btn { background: #3498db; color: white; border: none; padding: 8px 15px; border-radius: 5px; font-weight: bold; cursor: pointer; margin-bottom: 20px; transition: 0.2s; }
         .add-row-btn:hover { background: #2980b9; }
 
-        .checkbox-group { display: flex; gap: 15px; margin-top: 5px; }
-        .checkbox-group label { font-weight: normal; color: #333; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+        .checkbox-group { display: flex; gap: 15px; margin-top: 5px; flex-wrap: wrap; }
+        .checkbox-group label { font-weight: normal; color: #333; display: flex; align-items: center; gap: 8px; cursor: pointer; border: 1px solid #ddd; padding: 5px 10px; border-radius: 5px; background: #fff; }
         
-        .submit-btn { background-color: #e74c3c; color: white; border: none; padding: 15px; width: 100%; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; transition: 0.2s; }
-        .submit-btn:hover { background-color: #c0392b; }
-        .back-btn { display: block; text-align: center; margin-top: 15px; color: #7f8c8d; text-decoration: none; }
+        .submit-btn { background-color: #e67e22; color: white; border: none; padding: 15px; width: 100%; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; transition: 0.3s; box-shadow: 0 4px 6px rgba(230, 126, 34, 0.2); }
+        .submit-btn:hover { background-color: #d35400; transform: translateY(-1px); }
+        .submit-btn:disabled { background-color: #bdc3c7; cursor: not-allowed; }
         
-        .error { background: #fee; color: #c0392b; padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 20px; }
+        .back-btn { display: block; text-align: center; margin-top: 15px; color: #7f8c8d; text-decoration: none; font-size: 14px; }
+        .error { background: #fee2e2; color: #b91c1c; padding: 12px; border-radius: 8px; text-align: center; margin-bottom: 20px; border: 1px solid #f87171; font-weight: 500; }
     </style>
 </head>
 <body>
@@ -35,82 +36,95 @@
         
         {% with messages = get_flashed_messages() %}
             {% if messages %}
-            <div class="error">{{ messages[0] }}</div>
+            <div class="error">
+                <i class="fas fa-exclamation-circle"></i> {{ messages[0] }}
+            </div>
             {% endif %}
         {% endwith %}
 
-        <form action="/take_exam" method="POST">
+        <form id="configForm" action="/take_exam" method="POST">
             
             <label>Design Your Exam Blueprint:</label>
-            <p style="font-size: 12px; color: #7f8c8d; margin-top: 0;">Type a Subject, Block, or Topic name. Leave blank to grab random questions.</p>
+            <p style="font-size: 12px; color: #7f8c8d; margin-top: 0; margin-bottom: 10px;">
+                Type a Subject/Topic (e.g., 'Quant'). The engine will fetch unique questions matching these tags.
+            </p>
             
             <div id="blueprint-container">
                 <div class="blueprint-row">
-                    <input type="text" name="rule_tag[]" placeholder="e.g. Higher Math or Unit 1" style="flex: 3;">
-                    <input type="number" name="rule_count[]" placeholder="Qty" value="10" min="1" max="50" style="flex: 1;" required>
+                    <input type="text" name="rule_tag[]" placeholder="e.g. Quant or Physics" style="flex: 3;">
+                    <input type="number" name="rule_count[]" value="10" min="1" max="50" style="flex: 1;" required>
                     <button type="button" class="remove-btn" onclick="removeRow(this)" style="display:none;">&times;</button>
                 </div>
             </div>
             
             <button type="button" class="add-row-btn" onclick="addRow()">+ Add Subject/Topic</button>
+
             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
                 <div class="form-group" style="flex: 1; min-width: 120px;">
                     <label>Timer (Mins):</label>
                     <input type="number" name="timer" value="15" min="1" max="180" style="width: 100%;" required>
                 </div>
                 <div class="form-group" style="flex: 1; min-width: 120px;">
-                    <label>Correct Mark (+):</label>
+                    <label>Mark (+):</label>
                     <input type="number" name="pos_mark" value="4.0" step="0.5" style="width: 100%;" required>
                 </div>
                 <div class="form-group" style="flex: 1; min-width: 120px;">
-                    <label>Negative Mark (-):</label>
+                    <label>Penalty (-):</label>
                     <input type="number" name="neg_mark" value="1.0" step="0.25" style="width: 100%;" required>
                 </div>
             </div>
 
             <div class="form-group">
-                <label>Include Sections:</label>
+                <label>Include Question Types:</label>
                 <div class="checkbox-group">
                     <label><input type="checkbox" name="q_types" value="MCQ" checked> MCQs</label>
-                    <label><input type="checkbox" name="q_types" value="Short Answer" checked> Short Answer</label>
-                    <label><input type="checkbox" name="q_types" value="Long Answer" checked> Long Answer</label>
+                    <label><input type="checkbox" name="q_types" value="Short Answer"> Short Answer</label>
+                    <label><input type="checkbox" name="q_types" value="Long Answer"> Long Answer</label>
                 </div>
             </div>
 
-            <button type="submit" class="submit-btn">GENERATE CUSTOM TEST</button>
+            <button type="submit" id="submitBtn" class="submit-btn">GENERATE CUSTOM TEST 🚀</button>
             <a href="/" class="back-btn">&larr; Back to Dashboard</a>
         </form>
     </div>
 
     <script>
+        // 1. Blueprint Row Management
         function addRow() {
             const container = document.getElementById('blueprint-container');
             const newRow = document.createElement('div');
             newRow.className = 'blueprint-row';
             newRow.innerHTML = `
                 <input type="text" name="rule_tag[]" placeholder="e.g. Logical Reasoning" style="flex: 3;">
-                <input type="number" name="rule_count[]" placeholder="Qty" value="5" min="1" max="50" style="flex: 1;" required>
+                <input type="number" name="rule_count[]" value="5" min="1" max="50" style="flex: 1;" required>
                 <button type="button" class="remove-btn" onclick="removeRow(this)">&times;</button>
             `;
             container.appendChild(newRow);
             
-            // Show the remove button on the first row if there's more than one
-            const rows = container.getElementsByClassName('blueprint-row');
-            if (rows.length > 1) {
-                rows[0].querySelector('.remove-btn').style.display = 'block';
-            }
+            updateRemoveButtons();
         }
 
         function removeRow(btn) {
-            const container = document.getElementById('blueprint-container');
             btn.parentElement.remove();
-            
-            // Hide remove button if only one row is left
-            const rows = container.getElementsByClassName('blueprint-row');
-            if (rows.length === 1) {
-                rows[0].querySelector('.remove-btn').style.display = 'none';
+            updateRemoveButtons();
+        }
+
+        function updateRemoveButtons() {
+            const rows = document.getElementsByClassName('blueprint-row');
+            // Hide remove button if only one row exists, otherwise show all
+            for (let i = 0; i < rows.length; i++) {
+                const btn = rows[i].querySelector('.remove-btn');
+                btn.style.display = rows.length > 1 ? 'flex' : 'none';
             }
         }
+
+        // 2. Prevent Double Submission
+        document.getElementById('configForm').onsubmit = function() {
+            const btn = document.getElementById('submitBtn');
+            btn.innerHTML = "Finding Questions... Please Wait";
+            btn.disabled = true;
+            return true;
+        };
     </script>
 </body>
 </html>
