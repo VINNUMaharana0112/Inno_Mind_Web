@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, session, url_for, jsonify
+from flask import Flask, render_template, request, redirect, session, url_for, flash, jsonify
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -448,19 +448,9 @@ def take_exam():
         flash("Please select at least one section (e.g. MCQs).")
         return redirect(url_for('exam_config'))
 
-    # --- 2. Subscription Limit Check ---
-    total_req_count = sum(int(c) for c in rule_counts if c.isdigit() and int(c) > 0)
-    tier = session.get('subscription', 'Free')
-    limits = SUBSCRIPTION_LIMITS.get(tier, {"mcq": 10, "descriptive": 0}) # Default safety
-    
-    user_doc = db.collection('users').document(session['user_email']).get()
-    used = user_doc.to_dict().get('mcqs_taken_today', 0) if user_doc.exists else 0
-    
-    if used + total_req_count > limits['mcq']:
-        flash(f"Upgrade Required! Your {tier} limit is {limits['mcq']} questions/day. You've used {used}.")
-        return redirect(url_for('exam_config'))
+    # (Subscription limits have been completely removed here)
 
-    # --- 3. Anti-Repeat Logic (Seen Questions) ---
+    # --- 2. Anti-Repeat Logic (Seen Questions) ---
     seen_hashes = set()
     try:
         recent_tests = db.collection("student_results").where("student", "==", session['user_email']).order_by("date", direction=firestore.Query.DESCENDING).limit(5).stream()
@@ -469,26 +459,21 @@ def take_exam():
     except Exception as e: 
         print(f"DEBUG: Seen Qs Error: {e}")
 
-    # --- 4. THE DATA FETCH (Smart Course Matching) ---
+    # --- 3. THE DATA FETCH (Smart Course Matching) ---
     master_qs = []
     collections_to_check = ["questions", "opsc_content"]
     
-    # Force everything to lowercase for safe comparing
     safe_enrolled = enrolled_course.lower() if enrolled_course else ""
 
     for coll in collections_to_check:
-        # Fetch all questions (we will filter them instantly in Python)
         docs = db.collection(coll).stream()
-        
         for doc in docs:
             d = doc.to_dict()
             
-            # Check if the DB course (e.g. 'ipmat') is inside the enrolled course (e.g. 'ipmat_2026')
             db_course = d.get('course', '').lower()
             if not db_course or db_course not in safe_enrolled:
-                continue # Skip if it doesn't match
+                continue 
 
-            # Handle both CSV format and Manual Bundle format
             q_list = [d] if 'question' in d else d.get('questions', [])
 
             for q in q_list:
@@ -523,7 +508,7 @@ def take_exam():
 
                     master_qs.append(smart_q)
 
-    # --- 5. THE BLUEPRINT SELECTION (Safety Gate 2: Avoid Sample Crash) ---
+    # --- 4. THE BLUEPRINT SELECTION ---
     active_test_qs = []
     used_hashes_this_test = set() 
 
@@ -534,7 +519,7 @@ def take_exam():
         
         valid_pool = [q for q in master_qs if q['q_hash'] not in used_hashes_this_test and (not tag_l or tag_l in str(q['meta']).lower())]
         
-        # SAFETY: Use random.shuffle instead of sample to prevent "Sample larger than population" crash
+        import random
         random.shuffle(valid_pool)
         selected = valid_pool[:count] 
         
@@ -542,7 +527,7 @@ def take_exam():
         for sq in selected: used_hashes_this_test.add(sq['q_hash'])
 
     if not active_test_qs:
-        flash("No questions found! Check if you uploaded questions for " + enrolled_course)
+        flash("No unseen questions found for this topic! Try a different tag or leave it blank.")
         return redirect(url_for('exam_config'))
         
     session['active_test_qs'] = active_test_qs
