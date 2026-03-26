@@ -649,6 +649,81 @@ def pricing():
     display_name = str(enrolled_course).replace("_", " ").title()
     return render_template('pricing.html', course_pricing=course_pricing, course_name=display_name)
 
+@app.route('/create_order', methods=['POST'])
+def create_order():
+    student_email = session.get('user') or session.get('email') or session.get('student')
+    if not student_email: return jsonify({"error": "Not logged in"}), 401
+    if isinstance(student_email, dict): student_email = student_email.get('email', '')
+
+    data = request.json
+    package_id = data.get('package_id')
+
+    try:
+        # Fetch the package from the database to ensure they didn't tamper with the price
+        pkg_doc = db.collection("subscription_packages").document(package_id).get()
+        if not pkg_doc.exists: return jsonify({"error": "Package not found"}), 404
+        
+        pkg_data = pkg_doc.to_dict()
+        price_in_rupees = pkg_data.get('price', 0)
+        
+        # Razorpay expects the amount in PAISE (Multiply by 100)
+        amount_in_paise = int(price_in_rupees * 100)
+
+        # Create the order in Razorpay
+        order_data = {
+            "amount": amount_in_paise,
+            "currency": "INR",
+            "receipt": f"receipt_{package_id}_{student_email[:5]}",
+            "notes": {
+                "email": student_email,
+                "package": package_id
+            }
+        }
+        order = rzp_client.order.create(data=order_data)
+        
+        return jsonify({
+            "order_id": order['id'], 
+            "amount": amount_in_paise, 
+            "key_id": RAZORPAY_KEY_ID,
+            "package_name": pkg_data.get('name')
+        })
+
+    except Exception as e:
+        print(f"Order Creation Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/verify_payment', methods=['POST'])
+def verify_payment():
+    student_email = session.get('user') or session.get('email') or session.get('student')
+    if isinstance(student_email, dict): student_email = student_email.get('email', '')
+
+    data = request.json
+    
+    try:
+        # 1. Verify the cryptographic signature from Razorpay
+        rzp_client.utility.verify_payment_signature({
+            'razorpay_order_id': data.get('razorpay_order_id'),
+            'razorpay_payment_id': data.get('razorpay_payment_id'),
+            'razorpay_signature': data.get('razorpay_signature')
+        })
+        
+        # 2. If signature is valid, upgrade the student in Firestore!
+        package_id = data.get('package_id')
+        pkg_doc = db.collection("subscription_packages").document(package_id).get()
+        target_course = pkg_doc.to_dict().get('target_course', '')
+
+        db.collection("users").document(student_email).update({
+            "subscription": package_id,
+            "enrolled_course": target_course
+        })
+
+        return jsonify({"status": "success", "message": "Account Upgraded Successfully!"})
+
+    except razorpay.errors.SignatureVerificationError:
+        return jsonify({"status": "failed", "error": "Payment Verification Failed!"}), 400
+    except Exception as e:
+        return jsonify({"status": "failed", "error": str(e)}), 500
+
 @app.route('/checkout/<tier>')
 def checkout(tier):
     if 'user_email' not in session: return redirect(url_for('login'))
@@ -670,9 +745,14 @@ def checkout(tier):
 
 # ================= REAL PAYMENT GATEWAY (RAZORPAY) =================
 
-# ⚠️ WHEN READY FOR LAUNCH: Swap these test keys for your Live Razorpay Keys!
-RAZORPAY_KEY_ID = "rzp_live_SVMJshjiBfFfkr"
-RAZORPAY_KEY_SECRET = "v4PooXzferJIdvStE20ZOULg"
+# 🔴 LIVE KEYS (Commented out for safety during testing - DO NOT DELETE)
+# RAZORPAY_KEY_ID = "rzp_live_xxxxxxxxxxxxxxxxxx"
+# RAZORPAY_KEY_SECRET = "xxxxxxxxxxxxxxx"
+
+# 🟢 TEST KEYS (Active for development)
+RAZORPAY_KEY_ID = "rzp_test_SVsOLwS887kkCL"  # <--- Paste your rzp_test_ key here
+RAZORPAY_KEY_SECRET = "0GX3Nce0ZaU06IvJfpiQJZgN"    # <--- Paste your test secret here
+
 rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
 @app.route('/create_order', methods=['POST'])

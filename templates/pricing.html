@@ -38,6 +38,9 @@
         .back-link { display: block; text-align: center; margin-top: 40px; color: #7f8c8d; text-decoration: none; font-weight: bold; }
         .back-link:hover { color: #2c3e50; }
     </style>
+
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+
 </head>
 <body>
 
@@ -77,7 +80,7 @@
                 {% if current_plan == pkg.id %}
                     <button class="btn-upgrade btn-current" disabled><i class="fas fa-star"></i> Current Plan</button>
                 {% else %}
-                    <a href="#" class="btn-upgrade">Enroll Now</a>
+                    <button class="btn-upgrade" onclick="startCheckout('{{ pkg.id }}')">Enroll Now</button>
                 {% endif %}
             </div>
             {% endfor %}
@@ -90,6 +93,62 @@
     </div>
 
     <a href="/" class="back-link"><i class="fas fa-arrow-left"></i> Return to Dashboard</a>
+
+    <script>
+    async function startCheckout(packageId) {
+        // 1. Ask Python to create an order
+        const response = await fetch('/create_order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ package_id: packageId })
+        });
+        
+        const orderData = await response.json();
+        
+        if (orderData.error) {
+            alert("Error: " + orderData.error);
+            return;
+        }
+
+        // 2. Open the Razorpay Checkout Window
+        var options = {
+            "key": orderData.key_id, 
+            "amount": orderData.amount, 
+            "currency": "INR",
+            "name": "Inno Mind Academy",
+            "description": "Upgrade to " + orderData.package_name,
+            "image": "https://your-logo-url-here.png", // Optional: Add your logo URL
+            "order_id": orderData.order_id, 
+            "handler": async function (response){
+                // 3. Payment Success! Send verification to Python
+                const verifyRes = await fetch('/verify_payment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        razorpay_payment_id: response.razorpay_payment_id,
+                        razorpay_order_id: response.razorpay_order_id,
+                        razorpay_signature: response.razorpay_signature,
+                        package_id: packageId
+                    })
+                });
+                
+                const result = await verifyRes.json();
+                if (result.status === "success") {
+                    alert("Payment Successful! Your account has been upgraded.");
+                    window.location.href = "/"; // Send them back to the dashboard
+                } else {
+                    alert("Payment Verification Failed: " + result.error);
+                }
+            },
+            "theme": {
+                "color": "#3498db"
+            }
+        };
+        
+        var rzp1 = new Razorpay(options);
+        rzp1.open();
+    }
+    </script>
 
 </body>
 </html>
