@@ -334,41 +334,48 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 
 @app.route('/calendar')
 def campus_calendar():
-    # 1. Check if the student is logged in (Checking both 'email' and 'user' just in case)
-    if 'email' not in session and 'user' not in session:
+    # 1. DEBUG TOOL: This will print the actual session contents to your Render logs!
+    print("CURRENT SESSION DATA:", dict(session))
+    
+    # 2. The Catch-All Check: Look for every possible key your login function might have used
+    student_email = session.get('user') or session.get('email') or session.get('student') or session.get('user_email')
+    
+    # If absolutely none of them exist, the user actually isn't logged in
+    if not student_email:
+        print("DEBUG: No valid session key found! Redirecting to login.")
         return redirect(url_for('login'))
         
-    # 2. Safely get the student's email from the session
-    student_email = session.get('email') or session.get('user')
-    
-    # 3. Fetch their exact enrolled course directly from Firestore
+    # 3. Extract the email string if the session stored a dictionary by mistake
+    if isinstance(student_email, dict):
+        student_email = student_email.get('email', '')
+
     enrolled_course = ""
-    if isinstance(student_email, str): # If it's a normal email string
+    events = []
+    
+    try:
+        # 4. Fetch the student's exact enrolled course directly from Firestore
         user_doc = db.collection("users").document(student_email).get()
         if user_doc.exists:
             enrolled_course = user_doc.to_dict().get('enrolled_course', '')
-    elif isinstance(student_email, dict): # Fallback if session saved a whole dictionary
-        enrolled_course = student_email.get('enrolled_course', '')
 
-    events = []
-    try:
-        # 4. Fetch only events tagged for this student's specific course
-        events_stream = db.collection("calendar_events")\
-            .where(filter=FieldFilter("target_courses", "array_contains", enrolled_course))\
-            .stream()
+        # 5. Fetch only events tagged for this student's specific course
+        if enrolled_course:
+            events_stream = db.collection("calendar_events")\
+                .where(filter=FieldFilter("target_courses", "array_contains", enrolled_course))\
+                .stream()
+                
+            for doc in events_stream:
+                events.append(doc.to_dict())
+                
+            # Sort the events chronologically by date
+            events.sort(key=lambda x: x.get('date', '9999-12-31'))
             
-        for doc in events_stream:
-            events.append(doc.to_dict())
-            
-        # 5. Sort the events chronologically by date
-        events.sort(key=lambda x: x.get('date', '9999-12-31'))
-        
     except Exception as e:
         print(f"Calendar Sync Error: {e}")
         
-    # 6. Pass the data to the HTML template
-    user_data_for_template = {'enrolled_course': enrolled_course}
-    return render_template('calendar.html', user=user_data_for_template, events=events)
+    # 6. Pass the data explicitly to the HTML template
+    # We pass 'user' as a dictionary so {{ user.enrolled_course }} works in the HTML
+    return render_template('calendar.html', user={'enrolled_course': enrolled_course}, events=events)
 
 @app.route('/asset/<filename>')
 def serve_asset(filename):
