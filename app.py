@@ -302,6 +302,7 @@ def pricing():
 
     return render_template('pricing.html', packages=packages, current_plan=current_plan)
 
+@app.route('/whiteboard/')
 @app.route('/whiteboard')
 def whiteboard():
     # Only allow logged-in students to access the premium whiteboard
@@ -745,5 +746,6 @@ def verify_payment():
     except Exception as e:
         return jsonify({"status": "failed", "error": str(e)}), 500
 
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+if __name__ == "__main__":
+    # 0.0.0.0 is the magic number that lets mobile devices connect
+    app.run(host='0.0.0.0', port=10000)

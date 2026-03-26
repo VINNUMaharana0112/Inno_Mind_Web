@@ -198,5 +198,31 @@
         }
         window.onload = renderChart;
     </script>
+    <div id="liveSolutionPopup" style="display:none; position:fixed; bottom:20px; right:20px; width:350px; background:white; border:3px solid #9b59b6; border-radius:12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); z-index:9999; padding:15px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <h4 style="margin:0; color:#9b59b6;">📡 Live Teacher Solution</h4>
+            <button onclick="document.getElementById('liveSolutionPopup').style.display='none'" style="border:none; background:none; cursor:pointer; font-weight:bold;">✕</button>
+        </div>
+        <img id="liveSolutionImg" src="" style="width:100%; border-radius:8px; border:1px solid #eee;">
+        <p style="font-size:12px; color:#7f8c8d; margin-top:8px; text-align:center;">This solution was just pushed by your mentor.</p>
+    </div>
+
+    <script>
+        // Check for new pushed solutions every 10 seconds
+        setInterval(() => {
+            fetch('/get_live_board')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.image) {
+                        const imgElement = document.getElementById('liveSolutionImg');
+                        // Only show if the image is new (prevents annoying popups if they already closed it)
+                        if (imgElement.src !== data.image) {
+                            imgElement.src = data.image;
+                            document.getElementById('liveSolutionPopup').style.display = 'block';
+                        }
+                    }
+                });
+        }, 10000);
+    </script>
 </body>
 </html>
