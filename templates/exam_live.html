@@ -3,56 +3,32 @@
 <head>
     <title>Live Exam - {{ institute.name }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; margin: 0; padding-bottom: 50px; }
-        
-        /* Floating Sticky Timer */
         .timer-header { position: sticky; top: 0; background-color: #2c3e50; color: #f1c40f; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 100; border-bottom: 4px solid #e74c3c; }
-        
         .exam-container { max-width: 800px; margin: 20px auto; padding: 0 15px; }
+        
+        /* Question Card Styling */
         .question-card { background: white; padding: 25px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-left: 5px solid #3498db; }
+        .q-header { font-weight: bold; color: #7f8c8d; margin-bottom: 15px; font-size: 14px; text-transform: uppercase; display: flex; justify-content: space-between; }
+        .q-text { font-size: 17px; color: #2c3e50; margin-bottom: 20px; line-height: 1.6; }
         
-        .q-header { font-weight: bold; color: #7f8c8d; margin-bottom: 15px; font-size: 14px; text-transform: uppercase; }
-        .q-text { font-size: 16px; color: #2c3e50; margin-bottom: 20px; line-height: 1.5; }
-        
-        /* MCQ Options */
-        .option-row { display: flex; align-items: center; padding: 10px; border: 1px solid #ecf0f1; border-radius: 5px; margin-bottom: 8px; cursor: pointer; transition: 0.2s; }
-        .option-row:hover { background-color: #f8f9fa; }
-        .option-row input[type="radio"] { margin-right: 15px; transform: scale(1.2); }
-        
+        /* MCQ Options Styling */
+        .option-row { display: flex; align-items: center; padding: 12px 15px; border: 1px solid #ecf0f1; border-radius: 8px; margin-bottom: 10px; cursor: pointer; transition: 0.2s; background: #fff; }
+        .option-row:hover { background-color: #ebf5fb; border-color: #3498db; }
+        .option-row input[type="radio"] { margin-right: 15px; transform: scale(1.3); cursor: pointer; }
+        .option-label { font-weight: bold; color: #3498db; margin-right: 10px; }
+
         /* Descriptive Textarea */
-        textarea { width: 100%; height: 120px; padding: 10px; border: 1px solid #bdc3c7; border-radius: 5px; font-family: inherit; font-size: 14px; box-sizing: border-box; resize: vertical; }
+        textarea { width: 100%; height: 150px; padding: 12px; border: 1px solid #bdc3c7; border-radius: 8px; font-family: inherit; font-size: 15px; box-sizing: border-box; resize: vertical; }
         .word-counter { text-align: right; font-size: 12px; color: #3498db; font-weight: bold; margin-top: 5px; }
         
-        .submit-btn { background-color: #2ecc71; color: white; border: none; padding: 15px 30px; font-size: 18px; font-weight: bold; border-radius: 30px; cursor: pointer; width: 100%; box-shadow: 0 4px 10px rgba(46, 204, 113, 0.3); transition: 0.3s; }
+        .submit-btn { background-color: #2ecc71; color: white; border: none; padding: 15px 30px; font-size: 18px; font-weight: bold; border-radius: 30px; cursor: pointer; width: 100%; box-shadow: 0 4px 10px rgba(46, 204, 113, 0.3); transition: 0.3s; margin-top: 20px; }
         .submit-btn:hover { background-color: #27ae60; transform: translateY(-2px); }
 
-        /* NEW: Premium PDF Button Styling */
-        .inno-pdf-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: linear-gradient(135deg, #e74c3c, #c0392b);
-            color: #ffffff !important;
-            padding: 10px 15px;
-            border-radius: 8px;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 13px;
-            margin: 10px 0;
-            box-shadow: 0 4px 6px rgba(231, 76, 60, 0.2);
-            transition: all 0.3s ease;
-            border: 1px solid #c0392b;
-        }
-
-        .inno-pdf-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 12px rgba(231, 76, 60, 0.4);
-            background: linear-gradient(135deg, #c0392b, #a93226);
-        }
+        .inno-pdf-btn { display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, #e74c3c, #c0392b); color: #ffffff !important; padding: 10px 15px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 13px; margin: 10px 0; box-shadow: 0 4px 6px rgba(231, 76, 60, 0.2); transition: all 0.3s ease; border: 1px solid #c0392b; }
     </style>
 </head>
 <body>
@@ -64,11 +40,39 @@
     <div class="exam-container">
         <form id="examForm" action="/submit_exam" method="POST" enctype="multipart/form-data">
             
-            {{ exam_html | format_smart | safe }}
+            {% for q in questions %}
+            <div class="question-card">
+                <div class="q-header">
+                    <span>Question {{ loop.index }}</span>
+                    <span style="color:#3498db;">{{ q.type }}</span>
+                </div>
+                
+                <div class="q-text">
+                    {{ q.q_html | safe }}
+                </div>
+
+                {% if q.type == 'MCQ' %}
+                    <div class="options-container">
+                        {% for opt in q.opts_html %}
+                            {% if opt and opt.strip() != "" %}
+                            <label class="option-row">
+                                <input type="radio" name="q_{{ loop.index0 }}" value="{{ ['a','b','c','d'][loop.index0] }}">
+                                <span class="option-label">{{ ['A','B','C','D'][loop.index0] }}.</span>
+                                <span>{{ opt | safe }}</span>
+                            </label>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <textarea name="desc_{{ loop.index0 }}" id="desc_{{ loop.index0 }}" oninput="updateWordCount({{ loop.index0 }})" placeholder="Type your descriptive answer here..."></textarea>
+                    <div class="word-counter" id="count_{{ loop.index0 }}">Words: 0</div>
+                {% endif %}
+            </div>
+            {% endfor %}
             
             <div style="background: #e8f8f5; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 5px solid #2ecc71; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
                 <div style="font-weight: bold; color: #27ae60; margin-bottom: 10px; font-size: 18px;">📸 Descriptive Attachments (Optional)</div>
-                <div style="font-size: 14px; color: #34495e; margin-bottom: 15px;">Taking a hybrid test? Snap a photo of your handwritten answer sheet and upload it here for the examiner.</div>
+                <div style="font-size: 14px; color: #34495e; margin-bottom: 15px;">Snap a photo of your handwritten answer sheet and upload it here.</div>
                 <input type="file" name="attachment" accept="image/png, image/jpeg, image/jpg" style="padding: 10px; background: white; border-radius: 5px; width: 100%; border: 1px solid #bdc3c7; box-sizing: border-box;">
             </div>
             
@@ -76,24 +80,34 @@
         </form>
     </div>
 
+    <div id="pdfModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:99999; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:15px 25px; background:#2c3e50; border-bottom:2px solid #e74c3c;">
+            <div style="color:white; font-weight:bold; font-size:16px;">
+                <i class="fas fa-lock" style="color:#f1c40f; margin-right:8px;"></i> Secure View Mode
+            </div>
+            <button onclick="closeSecurePDF()" style="background:#e74c3c; color:white; border:none; padding:8px 20px; border-radius:5px; font-weight:bold; cursor:pointer; font-size:14px;">Close Viewer &times;</button>
+        </div>
+        <div style="flex-grow:1; width:100%; height:100%; position:relative;" oncontextmenu="return false;">
+            <iframe id="pdfFrame" src="" style="width:100%; height:100%; border:none;"></iframe>
+        </div>
+    </div>
+
     <script>
-        // 1. Word Counter Engine
+        // Word Counter
         function updateWordCount(index) {
             const text = document.getElementById('desc_' + index).value.trim();
             const count = text === "" ? 0 : text.split(/\s+/).length;
             document.getElementById('count_' + index).innerText = "Words: " + count;
         }
 
-        // 2. Countdown Timer Engine
-        let timeLeft = {{ timer * 60 }}; 
+        // Countdown Timer
+        let timeLeft = {{ time_left }}; 
         const timerDisplay = document.getElementById('timerDisplay');
         const examForm = document.getElementById('examForm');
 
         function updateTimer() {
             let minutes = Math.floor(timeLeft / 60);
             let seconds = timeLeft % 60;
-            
-            // Add leading zero
             minutes = minutes < 10 ? "0" + minutes : minutes;
             seconds = seconds < 10 ? "0" + seconds : seconds;
             
@@ -101,66 +115,31 @@
             
             if (timeLeft <= 0) {
                 clearInterval(timerInterval);
-                timerDisplay.innerText = "TIME UP!";
-                timerDisplay.style.color = "white";
-                timerDisplay.style.backgroundColor = "#e74c3c";
-                alert("Time is up! Your exam is being automatically submitted.");
-                examForm.submit(); // Force submission
+                alert("Time is up! Submitting exam...");
+                examForm.submit();
             }
             timeLeft--;
         }
-        
-        // Run the timer every 1 second
         const timerInterval = setInterval(updateTimer, 1000);
-        updateTimer(); // Initialize immediately
+        updateTimer();
 
-        // 3. Manual Submission Check
+        // Submit Confirmation
         function confirmSubmit() {
             if(confirm("Are you sure you are ready to submit your exam?")) {
                 examForm.submit();
             }
         }
-    </script>
-<div id="pdfModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:99999; flex-direction:column;">
-        
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:15px 25px; background:#2c3e50; border-bottom:2px solid #e74c3c;">
-            <div style="color:white; font-weight:bold; font-size:16px;">
-                <i class="fas fa-lock" style="color:#f1c40f; margin-right:8px;"></i> Secure View Mode
-            </div>
-            <button onclick="closeSecurePDF()" style="background:#e74c3c; color:white; border:none; padding:8px 20px; border-radius:5px; font-weight:bold; cursor:pointer; font-size:14px;">
-                Close Viewer &times;
-            </button>
-        </div>
 
-        <div style="flex-grow:1; width:100%; height:100%; position:relative;" oncontextmenu="return false;">
-            <div style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:10; pointer-events:none;"></div>
-            
-            <iframe id="pdfFrame" src="" style="width:100%; height:100%; border:none;"></iframe>
-        </div>
-    </div>
-
-    <script>
+        // PDF Functions
         function openSecurePDF(pdfUrl) {
-            // Show the modal
             const modal = document.getElementById('pdfModal');
             modal.style.display = 'flex';
-            
-            // We append #toolbar=0 to the URL. This forces Google Chrome and Edge 
-            // to hide the top toolbar containing the "Download" and "Print" buttons.
-            const secureUrl = pdfUrl + "#toolbar=0&navpanes=0&scrollbar=0";
-            document.getElementById('pdfFrame').src = secureUrl;
+            document.getElementById('pdfFrame').src = pdfUrl + "#toolbar=0&navpanes=0&scrollbar=0";
         }
-
         function closeSecurePDF() {
-            // Hide modal and clear the source to stop downloading
             document.getElementById('pdfModal').style.display = 'none';
             document.getElementById('pdfFrame').src = "";
         }
-
-        // Globally disable right-click anywhere inside the modal
-        document.getElementById('pdfModal').addEventListener('contextmenu', function(e) {
-            e.preventDefault();
-        });
     </script>
 </body>
 </html>

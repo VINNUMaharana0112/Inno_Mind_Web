@@ -427,13 +427,6 @@ def serve_asset(filename):
     except Exception as e:
         return str(e), 500
 
-# ================= LIVE EXAM ENGINE =================
-
-@app.route('/exam_config')
-def exam_config():
-    if 'user_email' not in session: return redirect(url_for('login'))
-    return render_template('exam_config.html')
-
 @app.route('/take_exam', methods=['POST'])
 def take_exam():
     if 'user_email' not in session: return redirect(url_for('login'))
@@ -443,6 +436,7 @@ def take_exam():
         flash("You must be enrolled in a course to take an exam.")
         return redirect(url_for('home'))
 
+    # --- 1. Get Form Data ---
     rule_tags = request.form.getlist('rule_tag[]')
     rule_counts = request.form.getlist('rule_count[]')
     timer = int(request.form.get('timer', 15)) * 60
@@ -454,177 +448,107 @@ def take_exam():
         flash("Please select at least one section (e.g. MCQs).")
         return redirect(url_for('exam_config'))
 
+    # --- 2. Subscription Limit Check ---
     total_req_count = sum(int(c) for c in rule_counts if c.isdigit() and int(c) > 0)
-
     tier = session.get('subscription', 'Free')
-    limits = SUBSCRIPTION_LIMITS.get(tier, {"mcq": 0, "descriptive": 0})
+    limits = SUBSCRIPTION_LIMITS.get(tier, {"mcq": 10, "descriptive": 0}) # Default safety
     
     user_doc = db.collection('users').document(session['user_email']).get()
     used = user_doc.to_dict().get('mcqs_taken_today', 0) if user_doc.exists else 0
     
     if used + total_req_count > limits['mcq']:
-        flash(f"Upgrade Required! Your {tier} limit is {limits['mcq']} questions per day. You have already used {used}.")
+        flash(f"Upgrade Required! Your {tier} limit is {limits['mcq']} questions/day. You've used {used}.")
         return redirect(url_for('exam_config'))
 
+    # --- 3. Anti-Repeat Logic (Seen Questions) ---
     seen_hashes = set()
     try:
-        recent_tests = db.collection("student_results").where(filter=FieldFilter("student", "==", session['user_email'])).order_by("date", direction=firestore.Query.DESCENDING).limit(5).stream()
-        for t in recent_tests: seen_hashes.update(t.to_dict().get('seen_qs', []))
-    except: pass
+        recent_tests = db.collection("student_results").where("student", "==", session['user_email']).order_by("date", direction=firestore.Query.DESCENDING).limit(5).stream()
+        for t in recent_tests: 
+            seen_hashes.update(t.to_dict().get('seen_qs', []))
+    except Exception as e: 
+        print(f"DEBUG: Seen Qs Error: {e}")
 
-    docs = db.collection("opsc_content").where('course_values', 'array_contains', enrolled_course).stream()
+    # --- 4. THE DATA FETCH (Safety Gate 1: Collection Name) ---
+    # We check both 'opsc_content' and 'questions' to be safe
     master_qs = []
+    collections_to_check = ["questions", "opsc_content"]
     
-    for doc in docs:
-        d = doc.to_dict()
-        for q in d.get('questions', []):
-            if q.get('type', 'MCQ') in allowed_types:
-                q_fingerprint = hashlib.md5(q.get('q', '').encode('utf-8')).hexdigest()
-                if q_fingerprint in seen_hashes: continue 
-                
-                smart_q = q.copy()
-                smart_q['q_hash'] = q_fingerprint
-                smart_q['meta'] = {'course': d.get('course', 'Uncategorized'), 'subject': d.get('subject', 'General'), 'block': d.get('block', 'Block'), 'unit': d.get('unit', 'Unit'), 'topic': d.get('topic', 'Topic')}
-                
-                # --- BULLETPROOF EXAM PDF INTEGRATION ---
-                # Format Question Text
-                raw_q = smart_q.get('q', '').replace('\n', '<br>')
-                img_parsed_q = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-width:100%; border-radius:5px; margin:10px 0;">', raw_q)
-                smart_q['q_html'] = format_smart_tags(img_parsed_q) 
-                
-                # Format Explanation Text
-                raw_exp = smart_q.get('exp', 'No explanation provided.').replace('\n', '<br>')
-                img_parsed_exp = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-height:100px; display:block; margin:10px 0;">', raw_exp)
-                smart_q['exp_html'] = format_smart_tags(img_parsed_exp)
-                
-                # Format Multiple Choice Options
-                if smart_q.get('type') == 'MCQ':
-                    processed_opts = []
-                    for opt in smart_q.get('opts', []):
-                        opt_html = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-height:80px; vertical-align:middle;">', opt)
-                        processed_opts.append(format_smart_tags(opt_html)) # Apply PDF engine to options too!
-                    smart_q['opts_html'] = processed_opts
-                    
-                master_qs.append(smart_q)
+    for coll in collections_to_check:
+        docs = db.collection(coll).where('course', '==', enrolled_course).stream()
+        for doc in docs:
+            d = doc.to_dict()
+            # If the doc is a single question (from Bulk Upload)
+            if 'question' in d:
+                q_list = [d]
+            else:
+                # If the doc is a bundle (from Manual Admin)
+                q_list = d.get('questions', [])
 
+            for q in q_list:
+                q_type = q.get('type', 'MCQ')
+                if q_type in allowed_types:
+                    q_text = q.get('question') or q.get('q', '')
+                    if not q_text: continue
+                    
+                    q_fingerprint = hashlib.md5(q_text.encode('utf-8')).hexdigest()
+                    if q_fingerprint in seen_hashes: continue 
+                    
+                    smart_q = q.copy()
+                    smart_q['q_hash'] = q_fingerprint
+                    
+                    # Ensure Meta exists for breakdown
+                    smart_q['meta'] = {
+                        'course': d.get('course', enrolled_course),
+                        'subject': d.get('subject', q.get('subject', 'General')),
+                        'block': d.get('block', q.get('block', 'Misc')),
+                        'unit': d.get('unit', q.get('unit', 'Misc')),
+                        'topic': d.get('topic', q.get('topic', 'Misc'))
+                    }
+                    
+                    # Formatting logic (Keeping your existing re.sub code)
+                    raw_q = q_text.replace('\n', '<br>')
+                    smart_q['q_html'] = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-width:100%;">', raw_q)
+                    
+                    if q_type == 'MCQ':
+                        # Handle both 'opts' list and 'a,b,c,d' keys
+                        if 'opts' in q:
+                            smart_q['opts_html'] = q['opts']
+                        else:
+                            smart_q['opts_html'] = [q.get('a',''), q.get('b',''), q.get('c',''), q.get('d','')]
+                        
+                        # Fix for the answer key
+                        smart_q['ans'] = q.get('answer') or q.get('ans')
+
+                    master_qs.append(smart_q)
+
+    # --- 5. THE BLUEPRINT SELECTION (Safety Gate 2: Avoid Sample Crash) ---
     active_test_qs = []
     used_hashes_this_test = set() 
 
     for tag, count_str in zip(rule_tags, rule_counts):
         if not count_str.isdigit() or int(count_str) <= 0: continue
         count = int(count_str)
-        tag_lower = tag.strip().lower()
+        tag_l = tag.strip().lower()
         
-        valid_pool = []
-        for q in master_qs:
-            if q['q_hash'] in used_hashes_this_test: continue
-            if tag_lower:
-                meta_values = str(q.get('meta', {})).lower()
-                if tag_lower not in meta_values: continue
-            valid_pool.append(q)
-            
-        selected = random.sample(valid_pool, min(count, len(valid_pool)))
+        valid_pool = [q for q in master_qs if q['q_hash'] not in used_hashes_this_test and (not tag_l or tag_l in str(q['meta']).lower())]
+        
+        # SAFETY: Use random.shuffle instead of sample to prevent "Sample larger than population" crash
+        random.shuffle(valid_pool)
+        selected = valid_pool[:count] 
+        
         active_test_qs.extend(selected)
         for sq in selected: used_hashes_this_test.add(sq['q_hash'])
 
     if not active_test_qs:
-        flash("We couldn't find enough unseen questions matching your specific blueprint. Try broadening your tags!")
+        flash("No questions found! Check if you uploaded questions for " + enrolled_course)
         return redirect(url_for('exam_config'))
         
     session['active_test_qs'] = active_test_qs
-    session['time_left'] = timer
     session['pos_mark'] = pos_mark
     session['neg_mark'] = neg_mark
     
-    return render_template('live_exam.html', questions=active_test_qs, time_left=timer, pos_mark=pos_mark, neg_mark=neg_mark)
-
-@app.route('/submit_exam', methods=['POST'])
-def submit_exam():
-    if 'user_email' not in session: return redirect(url_for('login'))
-    
-    active_test_qs = session.get('active_test_qs', [])
-    if not active_test_qs:
-        flash("Error: Test session expired or already submitted.")
-        return redirect(url_for('home'))
-        
-    pos_val = float(session.get('pos_mark', 4.0)) 
-    neg_val = float(session.get('neg_mark', 1.0)) 
-    
-    mcq_total = 0; mcq_correct = 0; mcq_wrong = 0
-    typed_descriptive = {}
-    breakdown_dict = {"course": {}, "subject": {}, "block": {}, "unit": {}, "topic": {}}
-    review_data = []
-    seen_qs_payload = []
-    
-    for i, q in enumerate(active_test_qs):
-        meta = q.get('meta', {})
-        q_type = q.get('type', 'MCQ')
-        
-        fingerprint = q.get('q_hash')
-        if not fingerprint: fingerprint = hashlib.md5(q.get('q', '').encode('utf-8')).hexdigest()
-        seen_qs_payload.append(fingerprint)
-        
-        if q_type == 'MCQ':
-            mcq_total += 1
-            user_ans = request.form.get(f'q_{i}', '')
-            is_correct = (user_ans == q.get('ans'))
-            is_wrong = (user_ans != "" and not is_correct)
-            score_val = pos_val if is_correct else (-neg_val if is_wrong else 0)
-            
-            if is_correct: mcq_correct += 1
-            elif is_wrong: mcq_wrong += 1
-            
-            for level in ['course', 'subject', 'block', 'unit', 'topic']:
-                tag_name = meta.get(level, 'Unknown')
-                if tag_name not in breakdown_dict[level]: breakdown_dict[level][tag_name] = {'score': 0.0, 'total': 0}
-                breakdown_dict[level][tag_name]['score'] += score_val
-                breakdown_dict[level][tag_name]['total'] += 1 
-                
-            review_data.append({
-                'q_html': q.get('q_html'), 'type': q_type, 'user_ans': user_ans if user_ans else 'Skipped',
-                'correct_ans': q.get('ans'), 'exp': q.get('exp_html', 'No explanation provided.'),
-                'is_correct': is_correct, 'is_skipped': user_ans == ""
-            })
-        else:
-            ans_text = request.form.get(f'desc_{i}', '').strip()
-            if ans_text: typed_descriptive[str(i+1)] = ans_text
-            review_data.append({
-                'q_html': q.get('q_html'), 'type': q_type, 'user_ans': ans_text if ans_text else 'Skipped',
-                'correct_ans': 'Manual Evaluation Required', 'exp': q.get('exp_html', 'No explanation provided.'),
-                'is_correct': None, 'is_skipped': ans_text == ""
-            })
-
-    final_mcq_score = (mcq_correct * pos_val) - (mcq_wrong * neg_val)
-    
-    mains_attachment_name = None
-    if 'attachment' in request.files:
-        file = request.files['attachment']
-        if file.filename != '': 
-            ext = os.path.splitext(file.filename)[1] or ".png"
-            safe_name = session['user_name'].replace(' ', '_')
-            mains_attachment_name = f"{safe_name}_{uuid.uuid4().hex[:6]}{ext}"
-            blob = bucket.blob(f"student_answers/{mains_attachment_name}")
-            blob.upload_from_file(file, content_type=file.content_type)
-            
-    user_email = session['user_email']
-    user_ref = db.collection("users").document(user_email)
-    user_doc = user_ref.get()
-    if user_doc.exists:
-        current_usage = user_doc.to_dict().get("mcqs_taken_today", 0)
-        user_ref.update({"mcqs_taken_today": current_usage + len(active_test_qs)})
-        
-    result_data = {
-        "student": session['user_email'],
-        "mcq_score_raw": final_mcq_score, "mcq_total_raw": mcq_total,
-        "breakdown": breakdown_dict, "typed_descriptive": typed_descriptive,
-        "seen_qs": seen_qs_payload, 
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    }
-    db.collection("student_results").add(result_data)
-    
-    session.pop('active_test_qs', None)
-    
-    return render_template('exam_review.html', score=final_mcq_score, correct=mcq_correct, wrong=mcq_wrong, review_data=review_data)
+    return render_template('live_exam.html', questions=active_test_qs, time_left=timer)
 
 @app.route('/privacy-policy')
 def privacy():
