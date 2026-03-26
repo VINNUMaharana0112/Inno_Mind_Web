@@ -330,6 +330,34 @@ def study():
     finished_tree_html = generate_tree_html(tree)
     return render_template('study.html', tree_html=finished_tree_html, content_dict=content_dict)
 
+from google.cloud.firestore_v1.base_query import FieldFilter
+
+@app.route('/calendar')
+def campus_calendar():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+        
+    user_data = session['user']
+    enrolled_course = user_data.get('enrolled_course', '')
+    
+    events = []
+    try:
+        # Fetch only events tagged for this student's specific course
+        events_stream = db.collection("calendar_events")\
+            .where(filter=FieldFilter("target_courses", "array_contains", enrolled_course))\
+            .stream()
+            
+        for doc in events_stream:
+            events.append(doc.to_dict())
+            
+        # Sort the events chronologically by date
+        events.sort(key=lambda x: x.get('date', '9999-12-31'))
+        
+    except Exception as e:
+        print(f"Calendar Sync Error: {e}")
+        
+    return render_template('calendar.html', user=user_data, events=events)
+
 @app.route('/asset/<filename>')
 def serve_asset(filename):
     if 'user_email' not in session: return "Unauthorized", 401
