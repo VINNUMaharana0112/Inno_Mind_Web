@@ -5,66 +5,47 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
+        /* --- CORE STYLES --- */
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; padding: 20px; margin: 0; }
         .header { background-color: #2c3e50; color: white; padding: 20px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         .header h2 { margin: 0; font-size: 20px; }
-        .logout-btn { color: white; background-color: #e74c3c; text-decoration: none; font-weight: bold; padding: 8px 16px; border-radius: 5px; font-size: 14px; }
+        .logout-btn { color: white; background-color: #e74c3c; text-decoration: none; font-weight: bold; padding: 8px 16px; border-radius: 5px; font-size: 14px; transition: 0.2s; }
+        .logout-btn:hover { background-color: #c0392b; }
         
+        /* --- STATS BANNER --- */
         .stats-banner { display: flex; gap: 20px; margin-top: 20px; flex-wrap: wrap; }
         .stat-box { flex: 1; background: white; padding: 20px; border-radius: 10px; text-align: center; border-bottom: 4px solid #2ecc71; box-shadow: 0 2px 5px rgba(0,0,0,0.05); min-width: 100px; }
         .stat-box h3 { margin: 0; font-size: 30px; color: #2c3e50; }
         .stat-box p { margin: 5px 0 0 0; font-size: 13px; color: #7f8c8d; text-transform: uppercase; font-weight: bold; }
 
-        /* NEW: Upgrade Banner Styling */
-        .upgrade-banner { background-color: #fdf2e9; border: 2px solid #e67e22; padding: 15px 20px; border-radius: 10px; margin-top: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
-        .upgrade-banner p { margin: 0; color: #d35400; font-weight: bold; font-size: 15px; }
-        .upgrade-btn { background-color: #e67e22; color: white; text-decoration: none; font-weight: bold; padding: 10px 20px; border-radius: 5px; transition: 0.2s; }
-        .upgrade-btn:hover { background-color: #d35400; }
+        /* --- ALERT & UPGRADE BANNERS --- */
+        .alert-banner { background: #e74c3c; color: white; padding: 20px; border-radius: 10px; margin: 20px auto; max-width: 800px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .alert-banner select { padding: 10px; border-radius: 5px; font-size: 16px; border: none; margin-right: 10px; min-width: 250px; }
+        .alert-banner button { background-color: #2ecc71; color: white; padding: 10px 20px; border: none; border-radius: 5px; font-weight: bold; font-size: 16px; cursor: pointer; transition: 0.3s; }
+        
+        .premium-banner { background: linear-gradient(135deg, #f39c12, #e67e22); color: white; padding: 20px; border-radius: 10px; margin: 20px auto; max-width: 800px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .upgrade-btn { background-color: white; color: #d35400; padding: 10px 25px; text-decoration: none; border-radius: 25px; font-weight: bold; font-size: 16px; display: inline-block; transition: 0.3s; }
+        .upgrade-btn:hover { transform: scale(1.05); }
 
+        /* --- ACTION CARDS --- */
         .action-container { display: flex; gap: 20px; margin-top: 20px; flex-wrap: wrap; }
-        .card { flex: 1; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); text-align: center; min-width: 250px; }
+        .card { flex: 1; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); text-align: center; min-width: 220px; transition: transform 0.2s; }
+        .card:hover { transform: translateY(-5px); }
         .card h3 { color: #2c3e50; margin-top: 10px; margin-bottom: 5px; }
         .card p { color: #7f8c8d; font-size: 14px; margin-bottom: 20px; line-height: 1.5; }
-        .action-btn { display: inline-block; color: white; text-decoration: none; padding: 12px 25px; border-radius: 25px; font-weight: bold; font-size: 15px; width: 60%; }
+        .action-btn { display: inline-block; color: white; text-decoration: none; padding: 12px 20px; border-radius: 25px; font-weight: bold; font-size: 14px; width: 70%; box-sizing: border-box;}
 
+        /* --- DATA & CHARTS --- */
         .data-container { display: flex; gap: 20px; margin-top: 20px; flex-wrap: wrap; }
         .chart-section { flex: 2; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-width: 300px; }
         .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-        select { padding: 8px; border-radius: 5px; border: 1px solid #bdc3c7; font-weight: bold; color: #2c3e50; outline: none; }
+        select.chart-filter { padding: 8px; border-radius: 5px; border: 1px solid #bdc3c7; font-weight: bold; color: #2c3e50; outline: none; }
         
         .history-section { flex: 1; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-width: 280px; max-height: 400px; overflow-y: auto; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td { text-align: left; padding: 12px 8px; border-bottom: 1px solid #ecf0f1; font-size: 14px; }
         th { color: #7f8c8d; text-transform: uppercase; font-size: 12px; }
         .score-badge { font-weight: bold; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; }
-    </style>
-    <style>
-        /* Premium PDF Button Styling */
-        .inno-pdf-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: linear-gradient(135deg, #e74c3c, #c0392b); /* Deep Red Gradient */
-            color: #ffffff !important;
-            padding: 12px 20px;
-            border-radius: 8px;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 14px;
-            margin: 15px 0;
-            box-shadow: 0 4px 6px rgba(231, 76, 60, 0.2);
-            transition: all 0.3s ease;
-            border: 1px solid #c0392b;
-        }
-
-        .inno-pdf-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 12px rgba(231, 76, 60, 0.4);
-            background: linear-gradient(135deg, #c0392b, #a93226);
-        }
-    
-        /* Ensure the FontAwesome icon loads (Add this to <head> if you don't have it yet) */
-        /* <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"> */
     </style>
 </head>
 <body>
@@ -80,30 +61,26 @@
     </div>
     
     {% if not enrolled_course %}
-    <div style="background: #e74c3c; color: white; padding: 20px; border-radius: 10px; margin: 20px auto; max-width: 800px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+    <div class="alert-banner">
         <h3 style="margin-top: 0; margin-bottom: 10px;">⚠️ Action Required: Select Your Course</h3>
-        <p style="margin-bottom: 15px; font-size: 16px;">You haven't linked your account to a specific course yet. Please select your program below to unlock your study materials, exams, and pricing.</p>
-    
+        <p style="margin-bottom: 15px; font-size: 16px;">Please select your program below to unlock your study materials, exams, and pricing.</p>
         <form action="/set_course" method="POST" style="display: inline-block;">
-            <select name="selected_course" required style="padding: 10px; border-radius: 5px; font-size: 16px; border: none; margin-right: 10px; min-width: 250px;">
+            <select name="selected_course" required>
                 <option value="" disabled selected>-- Choose your course --</option>
                 {% for name, val in available_courses.items() %}
                     <option value="{{ val }}">{{ name }}</option>
                 {% endfor %}
             </select>
-            <button type="submit" style="background-color: #2ecc71; color: white; padding: 10px 20px; border: none; border-radius: 5px; font-weight: bold; font-size: 16px; cursor: pointer; transition: 0.3s;">Save Course</button>
+            <button type="submit">Save Course</button>
         </form>
     </div>
     {% endif %}
 
-    {% if subscription == 'Free' or subscription == 'Silver' %}
-    <div style="background: linear-gradient(135deg, #f39c12, #e67e22); color: white; padding: 20px; border-radius: 10px; margin: 20px auto; max-width: 800px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+    {% if subscription == 'Free' or not subscription %}
+    <div class="premium-banner">
         <h3 style="margin-top: 0; margin-bottom: 10px;">🔒 Unlock Your Full Potential</h3>
-        <p style="margin-bottom: 15px; font-size: 16px;">You are currently on the <strong>{{ subscription }} Tier</strong>. Upgrade to get full access to premium mock tests, unlimited MCQs, and descriptive evaluations.</p>
-    
-        <a href="/pricing" style="background-color: white; color: #d35400; padding: 10px 25px; text-decoration: none; border-radius: 25px; font-weight: bold; font-size: 16px; display: inline-block; transition: 0.3s;">
-        View Pricing & Upgrade
-        </a>
+        <p style="margin-bottom: 15px; font-size: 16px;">You are currently on the <strong>Free Tier</strong>. Upgrade to get full access to premium mock tests and unlimited MCQs.</p>
+        <a href="/pricing" class="upgrade-btn">View Pricing & Upgrade</a>
     </div>
     {% endif %}
 
@@ -111,15 +88,15 @@
         <div class="card" style="border-top: 4px solid #3498db;">
             <h1 style="font-size: 30px; margin: 0;">📚</h1>
             <h3>Study Vault</h3>
-            <p>Access notes, concepts, and math theory.</p>
+            <p>Access notes, concepts, and theory.</p>
             <a href="/study" class="action-btn" style="background-color: #3498db;">Enter Vault</a>
         </div>
         
-        <div class="card" style="border-top: 4px solid #e67e22;">
+        <div class="card" style="border-top: 4px solid #e74c3c;">
             <h1 style="font-size: 30px; margin: 0;">🎓</h1>
             <h3>Live Exam</h3>
             <p>Take timed, dynamic mock tests.</p>
-            <a href="/exam_config" class="action-btn" style="background-color: #e67e22;">Configure Test</a>
+            <a href="/exam_config" class="action-btn" style="background-color: #e74c3c;">Configure Test</a>
         </div>
 
         <div class="card" style="border-top: 4px solid #9b59b6;">
@@ -128,13 +105,20 @@
             <p>View official deadlines and schedules.</p>
             <a href="/calendar" class="action-btn" style="background-color: #9b59b6;">View Calendar</a>
         </div>
+
+        <div class="card" style="border-top: 4px solid #f1c40f;">
+            <h1 style="font-size: 30px; margin: 0;">✏️</h1>
+            <h3>Scratchpad</h3>
+            <p>Digital whiteboard for visual problem solving.</p>
+            <a href="#" onclick="window.open('/whiteboard', 'InnoMindScratchpad', 'width=800,height=700,menubar=no,toolbar=no,location=no'); return false;" class="action-btn" style="background-color: #f1c40f; color: #2c3e50;">Launch Board</a>
+        </div>
     </div>
 
     <div class="data-container">
         <div class="chart-section">
             <div class="chart-header">
                 <h3 style="margin: 0; color: #2c3e50;">Performance Analysis</h3>
-                <select id="analysisLevel" onchange="renderChart()">
+                <select id="analysisLevel" class="chart-filter" onchange="renderChart()">
                     <option value="course">By Course</option>
                     <option value="subject" selected>By Subject</option>
                     <option value="block">By Block</option>
@@ -183,17 +167,15 @@
             const labels = [];
             const dataPcts = [];
 
-            for (const [name, stats] of Object.entries(targetData)) {
+            for (const [name, stats] of Object.entries(targetData || {})) {
                 if (stats.total > 0) {
                     labels.push(name.length > 15 ? name.substring(0, 15) + '...' : name);
-                    let pct = (stats.score / stats.total) * 100;
-                    dataPcts.push(Math.max(0, pct)); 
+                    dataPcts.push(Math.max(0, (stats.score / stats.total) * 100)); 
                 }
             }
 
             const ctx = document.getElementById('perfChart').getContext('2d');
-            
-            if (currentChart) { currentChart.destroy(); }
+            if (currentChart) currentChart.destroy();
 
             currentChart = new Chart(ctx, {
                 type: 'bar',
@@ -209,16 +191,11 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    scales: {
-                        y: { beginAtZero: true, max: 100 }
-                    },
-                    plugins: {
-                        legend: { display: false }
-                    }
+                    scales: { y: { beginAtZero: true, max: 100 } },
+                    plugins: { legend: { display: false } }
                 }
             });
         }
-
         window.onload = renderChart;
     </script>
 </body>

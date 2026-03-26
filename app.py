@@ -302,6 +302,15 @@ def pricing():
 
     return render_template('pricing.html', packages=packages, current_plan=current_plan)
 
+@app.route('/whiteboard')
+def whiteboard():
+    # Only allow logged-in students to access the premium whiteboard
+    student_email = session.get('user_email') or session.get('user') or session.get('email') or session.get('student')
+    if not student_email:
+        return redirect(url_for('login'))
+        
+    return render_template('whiteboard.html')
+
 # ================= STUDY VAULT =================
 
 @app.route('/study')

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inno Mind Scratchpad</title>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #2c3e50; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; height: 100vh; }
+        .toolbar { background: #34495e; padding: 10px; display: flex; gap: 15px; align-items: center; justify-content: center; box-shadow: 0 2px 10px rgba(0,0,0,0.3); z-index: 10; }
+        .toolbar-group { display: flex; align-items: center; gap: 5px; color: white; font-size: 14px; }
+        button { background: #3498db; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        button:hover { background: #2980b9; }
+        button.danger { background: #e74c3c; }
+        button.danger:hover { background: #c0392b; }
+        input[type="color"] { cursor: pointer; height: 30px; width: 40px; border: none; border-radius: 4px; background: none; }
+        input[type="range"] { cursor: pointer; }
+        canvas { background: white; cursor: crosshair; flex-grow: 1; touch-action: none; }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <div class="toolbar-group">
+            <label>Color:</label>
+            <input type="color" id="colorPicker" value="#000000">
+        </div>
+        <div class="toolbar-group">
+            <label>Brush Size:</label>
+            <input type="range" id="sizePicker" min="1" max="20" value="3">
+        </div>
+        <button id="eraserBtn">Eraser</button>
+        <button id="penBtn" style="background: #2ecc71;">Pen</button>
+        <button class="danger" id="clearBtn">Clear Board</button>
+    </div>
+
+    <canvas id="whiteboard"></canvas>
+
+    <script>
+        const canvas = document.getElementById('whiteboard');
+        const ctx = canvas.getContext('2d');
+        
+        // Resize canvas to fill the screen
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight - document.querySelector('.toolbar').offsetHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Variables
+        let drawing = false;
+        let currentColor = '#000000';
+        let currentSize = 3;
+        let isEraser = false;
+
+        // Toolbar Setup
+        document.getElementById('colorPicker').addEventListener('input', (e) => { currentColor = e.target.value; isEraser = false; });
+        document.getElementById('sizePicker').addEventListener('input', (e) => currentSize = e.target.value);
+        document.getElementById('clearBtn').addEventListener('click', () => ctx.clearRect(0, 0, canvas.width, canvas.height));
+        
+        document.getElementById('eraserBtn').addEventListener('click', () => { isEraser = true; });
+        document.getElementById('penBtn').addEventListener('click', () => { isEraser = false; });
+
+        // Drawing Functions
+        function startPosition(e) {
+            drawing = true;
+            draw(e);
+        }
+
+        function endPosition() {
+            drawing = false;
+            ctx.beginPath(); // Reset path so lines don't connect
+        }
+
+        function draw(e) {
+            if (!drawing) return;
+            e.preventDefault(); 
+            
+            // Handle both mouse and touch events
+            let clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            let clientY = e.clientY || (e.touches && e.touches[0].clientY);
+            
+            // Adjust for toolbar height
+            let rect = canvas.getBoundingClientRect();
+            let x = clientX - rect.left;
+            let y = clientY - rect.top;
+
+            ctx.lineWidth = currentSize;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = isEraser ? 'white' : currentColor;
+
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+        }
+
+        // Mouse Event Listeners
+        canvas.addEventListener('mousedown', startPosition);
+        canvas.addEventListener('mouseup', endPosition);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseout', endPosition); // Stop if mouse leaves canvas
+
+        // Touch Event Listeners (For Tablets/Phones)
+        canvas.addEventListener('touchstart', startPosition, {passive: false});
+        canvas.addEventListener('touchend', endPosition);
+        canvas.addEventListener('touchmove', draw, {passive: false});
+    </script>
+</body>
+</html>
