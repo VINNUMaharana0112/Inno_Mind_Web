@@ -446,15 +446,9 @@ def take_exam():
     allowed_types = request.form.getlist('q_types')
     if not allowed_types: allowed_types = ['MCQ', 'Short Answer', 'Long Answer']
 
-    # --- 2. Anti-Repeat ---
-    seen_hashes = set()
-    try:
-        recent_tests = db.collection("student_results").where("student", "==", session['user_email']).order_by("date", direction=firestore.Query.DESCENDING).limit(5).stream()
-        for t in recent_tests: 
-            seen_hashes.update(t.to_dict().get('seen_qs', []))
-    except: pass
+    # (REMOVED: The global 'seen_hashes' past-test fetcher has been deleted)
 
-    # --- 3. THE DATA FETCH (Now Supports Study Vault 'body' and 'course_values') ---
+    # --- 2. THE DATA FETCH ---
     master_qs = []
     collections_to_check = ["questions", "opsc_content"]
     safe_enrolled = enrolled_course.lower() if enrolled_course else ""
@@ -465,7 +459,6 @@ def take_exam():
             d = doc.to_dict()
             d_clean = {k.lower(): v for k, v in d.items()}
             
-            # Smart Course Check: Handle both Study Vault arrays and standard strings
             db_course_list = d_clean.get('course_values', [])
             if isinstance(db_course_list, list):
                 db_course_str = " ".join([str(c).lower() for c in db_course_list])
@@ -475,7 +468,6 @@ def take_exam():
             course_valid = not db_course_str or safe_enrolled in db_course_str or db_course_str in safe_enrolled
             if not course_valid: continue
 
-            # Smart Extraction: Look for lists of questions, or single questions, or Study Vault 'body' text
             q_list = []
             if 'questions' in d_clean and isinstance(d_clean['questions'], list):
                 q_list = d_clean['questions']
@@ -486,20 +478,17 @@ def take_exam():
                 if not isinstance(raw_q, dict): continue
                 q = {k.lower(): v for k, v in raw_q.items()} 
                 
-                # Extract text from standard 'question' OR Study Vault 'body'
                 q_text = str(q.get('question', '') or q.get('q', '') or q.get('body', ''))
                 if not q_text or q_text == 'None': continue
                 
-                # Auto-Detect Type: If it has A,B,C,D it's an MCQ. If it's just Study Vault text, make it a Long Answer.
                 has_options = any(k in q for k in ['a', 'b', 'c', 'd', 'opts'])
                 detected_type = 'MCQ' if has_options else 'Long Answer'
                 q_type = str(q.get('type', detected_type)).upper()
                 
-                # Check if the user selected this question type in the Config Wizard
                 if q_type not in [t.upper() for t in allowed_types]: continue
                 
+                # We KEEP this hash generator to prevent duplicates in the CURRENT test
                 q_fingerprint = hashlib.md5(q_text.encode('utf-8')).hexdigest()
-                if q_fingerprint in seen_hashes: continue 
                 
                 smart_q = {}
                 smart_q['type'] = q_type
@@ -524,7 +513,7 @@ def take_exam():
 
                 master_qs.append(smart_q)
 
-    # --- 4. THE BLUEPRINT SELECTION ---
+    # --- 3. THE BLUEPRINT SELECTION (Prevents intra-test duplicates) ---
     active_test_qs = []
     used_hashes_this_test = set() 
 
@@ -533,6 +522,7 @@ def take_exam():
         count = int(count_str)
         tag_l = tag.strip().lower()
         
+        # This line ensures we never pick the same q_hash twice in the same test session
         valid_pool = [q for q in master_qs if q['q_hash'] not in used_hashes_this_test and (not tag_l or tag_l in str(q['meta']).lower())]
         
         import random
@@ -542,7 +532,7 @@ def take_exam():
         active_test_qs.extend(selected)
         for sq in selected: used_hashes_this_test.add(sq['q_hash'])
 
-    # --- 5. THE DIAGNOSTIC FALLBACK ---
+    # --- 4. THE DIAGNOSTIC FALLBACK ---
     if not active_test_qs:
         if master_qs:
             import random
