@@ -436,77 +436,93 @@ def take_exam():
         flash("You must be enrolled in a course to take an exam.")
         return redirect(url_for('home'))
 
-    # --- 1. Get Form Data ---
+    # --- 1. Form Data ---
     rule_tags = request.form.getlist('rule_tag[]')
     rule_counts = request.form.getlist('rule_count[]')
     timer = int(request.form.get('timer', 15)) * 60
     pos_mark = float(request.form.get('pos_mark', 4.0))
     neg_mark = float(request.form.get('neg_mark', 1.0))
+    
     allowed_types = request.form.getlist('q_types')
+    if not allowed_types: allowed_types = ['MCQ', 'Short Answer', 'Long Answer']
 
-    if not allowed_types:
-        flash("Please select at least one section (e.g. MCQs).")
-        return redirect(url_for('exam_config'))
-
-    # (Subscription limits have been completely removed here)
-
-    # --- 2. Anti-Repeat Logic (Seen Questions) ---
+    # --- 2. Anti-Repeat ---
     seen_hashes = set()
     try:
         recent_tests = db.collection("student_results").where("student", "==", session['user_email']).order_by("date", direction=firestore.Query.DESCENDING).limit(5).stream()
         for t in recent_tests: 
             seen_hashes.update(t.to_dict().get('seen_qs', []))
-    except Exception as e: 
-        print(f"DEBUG: Seen Qs Error: {e}")
+    except: pass
 
-    # --- 3. THE DATA FETCH (Smart Course Matching) ---
+    # --- 3. THE DATA FETCH (Now Supports Study Vault 'body' and 'course_values') ---
     master_qs = []
     collections_to_check = ["questions", "opsc_content"]
-    
     safe_enrolled = enrolled_course.lower() if enrolled_course else ""
 
     for coll in collections_to_check:
         docs = db.collection(coll).stream()
         for doc in docs:
             d = doc.to_dict()
+            d_clean = {k.lower(): v for k, v in d.items()}
             
-            db_course = d.get('course', '').lower()
-            if not db_course or db_course not in safe_enrolled:
-                continue 
+            # Smart Course Check: Handle both Study Vault arrays and standard strings
+            db_course_list = d_clean.get('course_values', [])
+            if isinstance(db_course_list, list):
+                db_course_str = " ".join([str(c).lower() for c in db_course_list])
+            else:
+                db_course_str = str(d_clean.get('course', '')).lower()
+                
+            course_valid = not db_course_str or safe_enrolled in db_course_str or db_course_str in safe_enrolled
+            if not course_valid: continue
 
-            q_list = [d] if 'question' in d else d.get('questions', [])
+            # Smart Extraction: Look for lists of questions, or single questions, or Study Vault 'body' text
+            q_list = []
+            if 'questions' in d_clean and isinstance(d_clean['questions'], list):
+                q_list = d_clean['questions']
+            elif any(k in d_clean for k in ['question', 'q', 'body']):
+                q_list = [d_clean]
 
-            for q in q_list:
-                q_type = q.get('type', 'MCQ')
-                if q_type in allowed_types:
-                    q_text = q.get('question') or q.get('q', '')
-                    if not q_text: continue
-                    
-                    q_fingerprint = hashlib.md5(q_text.encode('utf-8')).hexdigest()
-                    if q_fingerprint in seen_hashes: continue 
-                    
-                    smart_q = q.copy()
-                    smart_q['q_hash'] = q_fingerprint
-                    
-                    smart_q['meta'] = {
-                        'course': d.get('course', enrolled_course),
-                        'subject': d.get('subject', q.get('subject', 'General')),
-                        'block': d.get('block', q.get('block', 'Misc')),
-                        'unit': d.get('unit', q.get('unit', 'Misc')),
-                        'topic': d.get('topic', q.get('topic', 'Misc'))
-                    }
-                    
-                    raw_q = q_text.replace('\n', '<br>')
-                    smart_q['q_html'] = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-width:100%;">', raw_q)
-                    
-                    if q_type == 'MCQ':
-                        if 'opts' in q:
-                            smart_q['opts_html'] = q['opts']
-                        else:
-                            smart_q['opts_html'] = [q.get('a',''), q.get('b',''), q.get('c',''), q.get('d','')]
-                        smart_q['ans'] = q.get('answer') or q.get('ans')
+            for raw_q in q_list:
+                if not isinstance(raw_q, dict): continue
+                q = {k.lower(): v for k, v in raw_q.items()} 
+                
+                # Extract text from standard 'question' OR Study Vault 'body'
+                q_text = str(q.get('question', '') or q.get('q', '') or q.get('body', ''))
+                if not q_text or q_text == 'None': continue
+                
+                # Auto-Detect Type: If it has A,B,C,D it's an MCQ. If it's just Study Vault text, make it a Long Answer.
+                has_options = any(k in q for k in ['a', 'b', 'c', 'd', 'opts'])
+                detected_type = 'MCQ' if has_options else 'Long Answer'
+                q_type = str(q.get('type', detected_type)).upper()
+                
+                # Check if the user selected this question type in the Config Wizard
+                if q_type not in [t.upper() for t in allowed_types]: continue
+                
+                q_fingerprint = hashlib.md5(q_text.encode('utf-8')).hexdigest()
+                if q_fingerprint in seen_hashes: continue 
+                
+                smart_q = {}
+                smart_q['type'] = q_type
+                smart_q['q_hash'] = q_fingerprint
+                smart_q['meta'] = {
+                    'course': db_course_str or enrolled_course,
+                    'subject': str(d_clean.get('subject', q.get('subject', 'General'))),
+                    'block': str(d_clean.get('block', q.get('block', 'Misc'))),
+                    'unit': str(d_clean.get('unit', q.get('unit', 'Misc'))),
+                    'topic': str(d_clean.get('topic', q.get('topic', 'Misc')))
+                }
+                
+                raw_q_html = q_text.replace('\n', '<br>')
+                smart_q['q_html'] = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-width:100%;">', raw_q_html)
+                
+                if q_type == 'MCQ':
+                    if 'opts' in q:
+                        smart_q['opts_html'] = q['opts']
+                    else:
+                        smart_q['opts_html'] = [str(q.get('a','')), str(q.get('b','')), str(q.get('c','')), str(q.get('d',''))]
+                    smart_q['ans'] = str(q.get('answer', '') or q.get('ans', ''))
 
-                    master_qs.append(smart_q)
+                master_qs.append(smart_q)
 
     # --- 4. THE BLUEPRINT SELECTION ---
     active_test_qs = []
@@ -526,15 +542,100 @@ def take_exam():
         active_test_qs.extend(selected)
         for sq in selected: used_hashes_this_test.add(sq['q_hash'])
 
+    # --- 5. THE DIAGNOSTIC FALLBACK ---
     if not active_test_qs:
-        flash("No unseen questions found for this topic! Try a different tag or leave it blank.")
-        return redirect(url_for('exam_config'))
+        if master_qs:
+            import random
+            random.shuffle(master_qs)
+            active_test_qs = master_qs[:5] 
+            flash(f"⚠️ Diagnostic Mode: Your tags didn't match perfectly, but we grabbed {len(active_test_qs)} items from your Study Vault to test!")
+        else:
+            flash("❌ CRITICAL: No questions or Study Vault materials found for this course.")
+            return redirect(url_for('exam_config'))
         
     session['active_test_qs'] = active_test_qs
     session['pos_mark'] = pos_mark
     session['neg_mark'] = neg_mark
     
     return render_template('live_exam.html', questions=active_test_qs, time_left=timer)
+
+@app.route('/submit_exam', methods=['POST'])
+def submit_exam():
+    if 'user_email' not in session: return redirect(url_for('login'))
+    
+    active_test_qs = session.get('active_test_qs', [])
+    if not active_test_qs:
+        flash("Error: Test session expired or already submitted.")
+        return redirect(url_for('home'))
+        
+    pos_val = float(session.get('pos_mark', 4.0)) 
+    neg_val = float(session.get('neg_mark', 1.0)) 
+    
+    mcq_total = 0; mcq_correct = 0; mcq_wrong = 0
+    typed_descriptive = {}
+    breakdown_dict = {"course": {}, "subject": {}, "block": {}, "unit": {}, "topic": {}}
+    seen_qs_payload = []
+    
+    for i, q in enumerate(active_test_qs):
+        meta = q.get('meta', {})
+        q_type = q.get('type', 'MCQ')
+        
+        fingerprint = q.get('q_hash')
+        if not fingerprint: fingerprint = hashlib.md5(q.get('q', '').encode('utf-8')).hexdigest()
+        seen_qs_payload.append(fingerprint)
+        
+        if q_type == 'MCQ':
+            mcq_total += 1
+            # Fetch the selected option (a, b, c, or d)
+            user_ans = request.form.get(f'q_{i}', '').strip().lower()
+            correct_ans = str(q.get('ans', '')).strip().lower()
+            
+            is_correct = (user_ans == correct_ans)
+            is_wrong = (user_ans != "" and not is_correct)
+            score_val = pos_val if is_correct else (-neg_val if is_wrong else 0)
+            
+            if is_correct: mcq_correct += 1
+            elif is_wrong: mcq_wrong += 1
+            
+            # Analytics Tracking
+            for level in ['course', 'subject', 'block', 'unit', 'topic']:
+                tag_name = meta.get(level, 'Unknown')
+                if tag_name not in breakdown_dict[level]: breakdown_dict[level][tag_name] = {'score': 0.0, 'total': 0}
+                breakdown_dict[level][tag_name]['score'] += score_val
+                breakdown_dict[level][tag_name]['total'] += 1 
+        else:
+            ans_text = request.form.get(f'desc_{i}', '').strip()
+            if ans_text: typed_descriptive[str(i+1)] = ans_text
+
+    final_mcq_score = (mcq_correct * pos_val) - (mcq_wrong * neg_val)
+    
+    # Optional Attachment Logic
+    mains_attachment_name = None
+    if 'attachment' in request.files:
+        file = request.files['attachment']
+        if file.filename != '': 
+            ext = os.path.splitext(file.filename)[1] or ".png"
+            safe_name = session['user_name'].replace(' ', '_')
+            mains_attachment_name = f"{safe_name}_{uuid.uuid4().hex[:6]}{ext}"
+            blob = bucket.blob(f"student_answers/{mains_attachment_name}")
+            blob.upload_from_file(file, content_type=file.content_type)
+            
+    # Save the Final Result to Firebase
+    result_data = {
+        "student": session['user_email'],
+        "mcq_score_raw": final_mcq_score, "mcq_total_raw": mcq_total,
+        "breakdown": breakdown_dict, "typed_descriptive": typed_descriptive,
+        "seen_qs": seen_qs_payload, 
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    db.collection("student_results").add(result_data)
+    
+    # Clear the active test memory
+    session.pop('active_test_qs', None)
+    
+    # Trigger success message and redirect to the Student Dashboard!
+    flash(f"🎉 Exam Submitted Successfully! You scored {final_mcq_score} marks out of {mcq_total * pos_val}.")
+    return redirect(url_for('home'))
 
 # 1. THE CONFIGURATION PAGE
 @app.route('/exam_config')

@@ -41,6 +41,7 @@
         <form id="examForm" action="/submit_exam" method="POST" enctype="multipart/form-data">
             
             {% for q in questions %}
+            {% set q_index = loop.index0 %} 
             <div class="question-card">
                 <div class="q-header">
                     <span>Question {{ loop.index }}</span>
@@ -56,7 +57,7 @@
                         {% for opt in q.opts_html %}
                             {% if opt and opt.strip() != "" %}
                             <label class="option-row">
-                                <input type="radio" name="q_{{ loop.index0 }}" value="{{ ['a','b','c','d'][loop.index0] }}">
+                                <input type="radio" name="q_{{ q_index }}" value="{{ ['a','b','c','d'][loop.index0] }}">
                                 <span class="option-label">{{ ['A','B','C','D'][loop.index0] }}.</span>
                                 <span>{{ opt | safe }}</span>
                             </label>
@@ -64,8 +65,8 @@
                         {% endfor %}
                     </div>
                 {% else %}
-                    <textarea name="desc_{{ loop.index0 }}" id="desc_{{ loop.index0 }}" oninput="updateWordCount({{ loop.index0 }})" placeholder="Type your descriptive answer here..."></textarea>
-                    <div class="word-counter" id="count_{{ loop.index0 }}">Words: 0</div>
+                    <textarea name="desc_{{ q_index }}" id="desc_{{ q_index }}" oninput="updateWordCount({{ q_index }})" placeholder="Type your descriptive answer here..."></textarea>
+                    <div class="word-counter" id="count_{{ q_index }}">Words: 0</div>
                 {% endif %}
             </div>
             {% endfor %}
