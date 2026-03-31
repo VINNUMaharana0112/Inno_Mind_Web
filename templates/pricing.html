@@ -58,9 +58,10 @@
                 <div class="pkg-price">₹{{ pkg.price }}<span> / {{ pkg.validity_days }} Days</span></div>
                 
                 <ul class="features-list">
+                    {% if pkg.get('mcq_limit', 0) > 0 %}
                     <li><i class="fas fa-check-circle"></i> {{ pkg.mcq_limit }} Live MCQs per day</li>
                     
-                    {% if pkg.desc_limit > 0 %}
+                    {% if pkg.get('desc_limit', 0) > 0 %}
                     <li><i class="fas fa-check-circle"></i> {{ pkg.desc_limit }} Descriptive Checks/mo</li>
                     {% endif %}
 

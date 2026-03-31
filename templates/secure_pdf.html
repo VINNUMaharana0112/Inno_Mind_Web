@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Inno Mind Secure Vault</title>
+    <style>
+        body { margin: 0; background-color: #333; display: flex; flex-direction: column; align-items: center; user-select: none; -webkit-user-select: none; }
+        #pdf-render { border: 1px solid #000; direction: ltr; box-shadow: 0 4px 8px rgba(0,0,0,0.5); margin-top: 20px; margin-bottom: 20px; }
+        .toolbar { background-color: #1E3A8A; width: 100%; padding: 15px; color: white; display: flex; justify-content: center; gap: 20px; align-items: center; position: sticky; top: 0; z-index: 100; font-family: sans-serif;}
+        button { background: #e74c3c; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold;}
+        button:hover { background: #c0392b; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+</head>
+<body oncontextmenu="return false;"> <div class="toolbar">
+        <span><i class="fas fa-lock"></i> SECURE VAULT (Downloads Disabled)</span>
+        <button id="prev-page">Previous Page</button>
+        <span>Page: <span id="page-num"></span> / <span id="page-count"></span></span>
+        <button id="next-page">Next Page</button>
+    </div>
+
+    <canvas id="pdf-render"></canvas>
+
+    <script>
+        const url = "{{ pdf_url }}";
+        let pdfDoc = null, pageNum = 1, pageIsRendering = false, pageNumIsPending = null;
+        const scale = 1.5, canvas = document.querySelector('#pdf-render'), ctx = canvas.getContext('2d');
+
+        // Set worker path
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+        const renderPage = num => {
+            pageIsRendering = true;
+            pdfDoc.getPage(num).then(page => {
+                const viewport = page.getViewport({ scale });
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                const renderCtx = { canvasContext: ctx, viewport };
+                page.render(renderCtx).promise.then(() => {
+                    pageIsRendering = false;
+                    if (pageNumIsPending !== null) {
+                        renderPage(pageNumIsPending);
+                        pageNumIsPending = null;
+                    }
+                });
+                document.querySelector('#page-num').textContent = num;
+            });
+        };
+
+        const queueRenderPage = num => {
+            if (pageIsRendering) { pageNumIsPending = num; } else { renderPage(num); }
+        };
+
+        document.querySelector('#prev-page').addEventListener('click', () => {
+            if (pageNum <= 1) return;
+            pageNum--;
+            queueRenderPage(pageNum);
+        });
+
+        document.querySelector('#next-page').addEventListener('click', () => {
+            if (pageNum >= pdfDoc.numPages) return;
+            pageNum++;
+            queueRenderPage(pageNum);
+        });
+
+        // Fetch PDF Document
+        pdfjsLib.getDocument(url).promise.then(pdfDoc_ => {
+            pdfDoc = pdfDoc_;
+            document.querySelector('#page-count').textContent = pdfDoc.numPages;
+            renderPage(pageNum);
+        });
+
+        // Block keyboard shortcuts (Ctrl+S, Ctrl+P)
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && (e.key === 's' || e.key === 'p' || e.key === 'c')) { e.preventDefault(); }
+        });
+    </script>
+</body>
+</html>
