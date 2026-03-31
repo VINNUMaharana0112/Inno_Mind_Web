@@ -283,7 +283,7 @@ def study():
         for key, child in node.items():
             current_id = f"{prefix}_{depth}_{i}"
             html += f'<button class="folder-btn" onclick="toggleTier(\'{current_id}\')">{icon} {key}</button>\n'
-            html += f'<div id="{current_id}" class="tier" style="display:none; margin-left:15px;">\n'
+            html += f'<div id="{current_id}" class="tier" style="margin-left:15px;">\n'
             html += generate_tree_html(child, depth + 1, current_id)
             html += f'</div>\n'
             i += 1
