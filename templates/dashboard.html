@@ -170,7 +170,7 @@
     </div>
 
     <script>
-        const rawData = {{ analytics_data | tojson | safe }};
+        const rawData = {{ analytics_data | default({}) | tojson | safe }};
         let currentChart = null;
 
         function renderChart() {

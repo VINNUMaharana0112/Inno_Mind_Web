@@ -156,19 +156,18 @@ def home():
         available_packages.append(pkg_data)
     # ----------------------------
 
-        return render_template('dashboard.html', 
-                            enrolled_course=enrolled_course, 
-                            subscription=subscription_tier,
-                            available_packages=available_packages) # Make sure to add this!
-
+    # ONE SINGLE RETURN WITH ALL VARIABLES
     return render_template('dashboard.html', 
-                        user_name=session.get('user_name'), 
-                        acc=acc, net=net_score, total=total_mcq,
-                        test_history=test_history,
-                        analytics_data=aggregated_stats,
-                        enrolled_course=enrolled_course,
-                        available_courses=available_courses,
-                        subscription=subscription_tier, available_packages=available_packages)
+                           user_name=session.get('user_name'), 
+                           acc=acc, 
+                           net=net_score, 
+                           total=total_mcq,
+                           test_history=test_history,
+                           analytics_data=aggregated_stats,
+                           enrolled_course=enrolled_course,
+                           available_courses=available_courses,
+                           subscription=subscription_tier, 
+                           available_packages=available_packages)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
