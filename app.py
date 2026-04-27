@@ -147,20 +147,21 @@ def home():
 
     acc = round((net_score / (total_mcq * 4) * 100), 1) if total_mcq > 0 else 0
 
-# --- NEW STOREFRONT LOGIC ---
-        # Fetch all available courses to show free users
-        packages_ref = db.collection('subscription_packages').stream()
-        available_packages = []
-        for pkg in packages_ref:
-            pkg_data = pkg.to_dict()
-            pkg_data['id'] = pkg.id # Save the document ID so Razorpay knows what to charge
-            available_packages.append(pkg_data)
-        # ----------------------------
+        # --- NEW STOREFRONT LOGIC ---
+    packages_ref = db.collection('subscription_packages').stream()
+    available_packages = []
+    for pkg in packages_ref:
+        pkg_data = pkg.to_dict()
+        pkg_data['id'] = pkg.id 
+        available_packages.append(pkg_data)
+    # ----------------------------
 
-        return render_template('dashboard.html', 
-                            enrolled_course=enrolled_course, 
-                            subscription=subscription_tier,
-                            available_packages=available_packages) # Make sure to add this!
+    return render_template('dashboard.html', 
+                        institute=institute,
+                        user_name=user_name,
+                        enrolled_course=enrolled_course, 
+                        subscription=subscription_tier,
+                        available_packages=available_packages)
 
     return render_template('dashboard.html', 
                             user_name=session.get('user_name'), 
