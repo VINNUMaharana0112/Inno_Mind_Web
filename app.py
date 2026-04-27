@@ -9,7 +9,7 @@ import re
 import random
 import uuid
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
 import razorpay
 
 app = Flask(__name__)
@@ -76,9 +76,32 @@ def home():
     if user_doc.exists:
         user_data = user_doc.to_dict()
         enrolled_course = user_data.get('enrolled_course')
+        subscription_tier = user_data.get('subscription', 'Free')
+        
+        # --- NEW EXPIRATION LOGIC ---
+        end_date_str = user_data.get('sub_end_date')
+        if end_date_str and subscription_tier != "Free":
+            try:
+                # Convert the stored string date into a real Python date
+                expiration_date = datetime.strptime(end_date_str, "%Y-%m-%d")
+                
+                # Check if today is past the expiration date
+                if datetime.now() > expiration_date:
+                    # Downgrade the user!
+                    db.collection('users').document(user_email).update({
+                        "subscription": "Free",
+                        "enrolled_course": "",
+                        "sub_end_date": ""
+                    })
+                    subscription_tier = "Free"
+                    enrolled_course = None
+                    flash("⚠️ Your subscription has expired. Please renew to access premium features.")
+            except ValueError:
+                pass # Failsafe in case of a corrupted date string
+        # ----------------------------
+
         if enrolled_course in ["None", ""]: enrolled_course = None
             
-        subscription_tier = user_data.get('subscription', 'Free')
         session['enrolled_course'] = enrolled_course 
         session['subscription'] = subscription_tier
         
@@ -525,9 +548,24 @@ def verify_payment():
         
         package_id = data.get('package_id')
         pkg_doc = db.collection("subscription_packages").document(package_id).get()
-        target_course = pkg_doc.to_dict().get('target_course', '')
+        pkg_data = pkg_doc.to_dict()
+        
+        target_course = pkg_data.get('target_course', '')
+        
+        # --- NEW DATE CALCULATION LOGIC ---
+        # Fetch validity days (Defaults to 365 days if you forget to add it in Firebase)
+        validity_days = int(pkg_data.get('validity_days', 365)) 
+        start_date = datetime.now()
+        end_date = start_date + timedelta(days=validity_days)
+        
+        db.collection("users").document(student_email).update({
+            "subscription": package_id, 
+            "enrolled_course": target_course,
+            "sub_start_date": start_date.strftime("%Y-%m-%d"),
+            "sub_end_date": end_date.strftime("%Y-%m-%d")
+        })
+        # ----------------------------------
 
-        db.collection("users").document(student_email).update({"subscription": package_id, "enrolled_course": target_course})
         return jsonify({"status": "success", "message": "Account Upgraded Successfully!"})
     except Exception as e:
         return jsonify({"status": "failed", "error": str(e)}), 500
