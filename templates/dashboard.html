@@ -87,10 +87,10 @@
                 <p style="color: #e67e22; font-size: 14px; font-weight: bold; margin-bottom: 10px;">Valid for {{ pkg.validity_days }} days</p>
                 <p style="font-size: 14px; color: #7f8c8d; line-height: 1.5; min-height: 45px;">{{ pkg.description }}</p>
                 
-                <button onclick="checkout('{{ pkg.id }}', {{ pkg.price }})" 
-                        style="width: 100%; padding: 12px; background-color: #d35400; color: white; border: none; border-radius: 25px; cursor: pointer; font-weight: bold; font-size: 16px; margin-top: 15px; transition: background-color 0.3s;">
+                <a href="/checkout/{{ pkg.id }}" 
+                   style="display: block; width: 100%; padding: 12px; background-color: #d35400; color: white; text-align: center; text-decoration: none; border-radius: 25px; font-weight: bold; font-size: 16px; margin-top: 15px; box-sizing: border-box; transition: background-color 0.3s;">
                     Buy Now
-                </button>
+                </a>
             </div>
             {% endfor %}
         </div>

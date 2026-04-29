@@ -30,23 +30,23 @@
         <div class="order-summary">
             <div class="summary-row">
                 <span>Course:</span>
-                <strong>{{ course_name }}</strong>
+                <strong>{{ package.name }}</strong>
             </div>
             <div class="summary-row">
-                <span>Subscription Tier:</span>
-                <strong style="color: {% if tier == 'Diamond' %}#8e44ad{% else %}#f39c12{% endif %};">{{ tier }} Plan</strong>
+                <span>Access Validity:</span>
+                <strong style="color: #f39c12;">{{ package.validity_days }} Days</strong>
             </div>
             
             <div class="total-row">
                 <span>Total to Pay:</span>
-                <span>₹{{ price }}</span>
+                <span>₹{{ package.price }}</span>
             </div>
         </div>
 
-        <button id="pay-btn" class="btn-pay" onclick="startPayment()">💳 Pay ₹{{ price }} Securely</button>
+        <button id="pay-btn" class="btn-pay" onclick="startPayment()">💳 Pay ₹{{ package.price }} Securely</button>
         <p id="loading-msg" style="display:none; color:#f39c12; font-weight:bold; margin-top:10px;">Connecting to secure gateway...</p>
         
-        <a href="/pricing" class="cancel-link">Cancel and return to pricing</a>
+        <a href="/" class="cancel-link">Cancel and return to dashboard</a>
     </div>
 
     <script>
@@ -60,7 +60,7 @@
             fetch('/create_order', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tier: "{{ tier }}" })
+                body: JSON.stringify({ package_id: "{{ package.id }}", amount: {{ package.price }} })
             })
             .then(response => response.json())
             .then(data => {
@@ -76,8 +76,8 @@
                     "key": data.key_id,
                     "amount": data.amount,
                     "currency": "INR",
-                    "name": "{{ course_name }} Prep",
-                    "description": "{{ tier }} Subscription",
+                    "name": "Inno Mind Academy",
+                    "description": "{{ package.name }}",
                     "order_id": data.order_id,
                     "handler": function (response) {
                         msg.innerText = "Verifying payment... Please do not close this window.";
@@ -90,12 +90,13 @@
                                 razorpay_order_id: response.razorpay_order_id,
                                 razorpay_payment_id: response.razorpay_payment_id,
                                 razorpay_signature: response.razorpay_signature,
-                                tier: "{{ tier }}"
+                                package_id: "{{ package.id }}"
                             })
                         })
                         .then(res => res.json())
                         .then(verifyData => {
-                            if(verifyData.status === "Success") {
+                            // Using toLowerCase() just in case Python sends "Success" or "success"
+                            if(verifyData.status.toLowerCase() === "success") {
                                 window.location.href = "/"; // Send them to the dashboard!
                             } else {
                                 alert("Payment verification failed! " + verifyData.error);

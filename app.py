@@ -528,25 +528,45 @@ RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'rzp_live_SW9omOnzjAKQ3e')
 RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '4EfPk2xQMk2xDP0ieok6a11G')
 rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
+@app.route('/checkout/<package_id>')
+def checkout_page(package_id):
+    if 'user_email' not in session:
+        return redirect(url_for('login'))
+        
+    # Fetch the specific course the user clicked on
+    pkg_doc = db.collection('subscription_packages').document(package_id).get()
+    
+    if not pkg_doc.exists:
+        flash("Course not found!")
+        return redirect(url_for('home'))
+        
+    package_data = pkg_doc.to_dict()
+    package_data['id'] = pkg_doc.id
+    
+    return render_template('Checkout.html', package=package_data)
+
 @app.route('/create_order', methods=['POST'])
 def create_order():
-    student_email = session.get('user_email')
-    if not student_email: return jsonify({"error": "Not logged in"}), 401
-    package_id = request.json.get('package_id')
-
+    data = request.json
+    amount = int(data.get('amount')) * 100  # Razorpay needs paise
+    
     try:
-        pkg_doc = db.collection("subscription_packages").document(package_id).get()
-        if not pkg_doc.exists: return jsonify({"error": "Package not found"}), 404
-        
-        pkg_data = pkg_doc.to_dict()
-        amount_in_paise = int(pkg_data.get('price', 0) * 100)
-
-        order_data = {"amount": amount_in_paise, "currency": "INR", "receipt": f"receipt_{package_id}_{student_email[:5]}"}
+        # Create the order in Razorpay
+        order_data = {
+            'amount': amount,
+            'currency': 'INR',
+            'payment_capture': '1'
+        }
         order = rzp_client.order.create(data=order_data)
         
-        return jsonify({"order_id": order['id'], "amount": amount_in_paise, "key_id": RAZORPAY_KEY_ID, "package_name": pkg_data.get('name')})
+        # Send the order ID AND your Key ID back to Javascript
+        return jsonify({
+            'order_id': order['id'],
+            'amount': amount,
+            'key_id': 'YOUR_LIVE_RAZORPAY_KEY' # Replace this with your actual key!
+        })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/verify_payment', methods=['POST'])
 def verify_payment():
