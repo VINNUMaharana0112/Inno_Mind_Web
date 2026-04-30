@@ -547,6 +547,22 @@ def checkout_page(package_id):
     # Make sure 'checkout.html' exactly matches your file name (Checkout.html vs checkout.html)
     return render_template('checkout.html', package=package_data)
 
+@app.route('/terms')
+def terms():
+    return render_template('terms.html')
+
+@app.route('/privacy')
+def privacy():
+    return render_template('privacy.html')
+
+@app.route('/refund')
+def refund():
+    return render_template('refund.html')
+
+@app.route('/contact')
+def contact():
+    return render_template('contact.html')
+
 @app.route('/create_order', methods=['POST'])
 def create_order():
     data = request.json
