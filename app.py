@@ -563,6 +563,10 @@ def refund():
 def contact():
     return render_template('contact.html')
 
+@app.route('/cancellation')
+def cancellation():
+    return render_template('cancellation.html')
+
 @app.route('/create_order', methods=['POST'])
 def create_order():
     data = request.json
