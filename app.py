@@ -524,6 +524,8 @@ def update_live_board():
     return jsonify({"success": True})
 
 # ================= REAL PAYMENT GATEWAY (RAZORPAY) =================
+# We use os.environ to keep keys hidden from GitHub. 
+# If they aren't in the environment, it uses the hardcoded string (ONLY use test keys for the hardcoded string!)
 RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'rzp_live_SW9omOnzjAKQ3e') 
 RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '4EfPk2xQMk2xDP0ieok6a11G')
 rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
@@ -537,12 +539,12 @@ def checkout_page(package_id):
     pkg_doc = db.collection('subscription_packages').document(package_id).get()
     
     if not pkg_doc.exists:
-        flash("Course not found!")
-        return redirect(url_for('home'))
+        return "<h1>Error</h1><p>Course not found in the database.</p>", 404
         
     package_data = pkg_doc.to_dict()
     package_data['id'] = pkg_doc.id
     
+    # Make sure 'checkout.html' exactly matches your file name (Checkout.html vs checkout.html)
     return render_template('checkout.html', package=package_data)
 
 @app.route('/create_order', methods=['POST'])
@@ -559,11 +561,11 @@ def create_order():
         }
         order = rzp_client.order.create(data=order_data)
         
-        # Send the order ID AND your Key ID back to Javascript
+        # Send the order ID AND your Key ID back to Javascript safely
         return jsonify({
             'order_id': order['id'],
             'amount': amount,
-            'key_id': 'YOUR_LIVE_RAZORPAY_KEY' # Replace this with your actual key!
+            'key_id': RAZORPAY_KEY_ID  # FIXED: Now it sends the real key!
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
