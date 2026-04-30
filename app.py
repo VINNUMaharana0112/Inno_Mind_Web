@@ -543,7 +543,7 @@ def checkout_page(package_id):
     package_data = pkg_doc.to_dict()
     package_data['id'] = pkg_doc.id
     
-    return render_template('Checkout.html', package=package_data)
+    return render_template('checkout.html', package=package_data)
 
 @app.route('/create_order', methods=['POST'])
 def create_order():
