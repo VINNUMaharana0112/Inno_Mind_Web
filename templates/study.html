@@ -173,5 +173,66 @@
             e.preventDefault();
         });
     </script>
+
+    <!-- ================= 3D FLIPBOOK MODAL ================= -->
+    <style>
+        /* The dark background overlay */
+        #flipbook-modal {
+            display: none; /* Hidden by default */
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(15, 23, 30, 0.95); backdrop-filter: blur(10px);
+            z-index: 9999; /* Make sure it sits on top of everything */
+            flex-direction: column;
+        }
+    
+        /* Modal Header with Close Button */
+        .modal-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 15px 30px; background: #1e272e; border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .modal-header h3 { color: white; margin: 0; font-family: 'Segoe UI', sans-serif; }
+    
+        .close-modal-btn {
+            background: #ff4757; color: white; border: none; padding: 8px 20px;
+            border-radius: 20px; font-weight: bold; cursor: pointer; transition: 0.2s;
+        }
+        .close-modal-btn:hover { background: #ff6b81; transform: scale(1.05); }
+
+        /* The iframe that holds the actual secure_pdf.html page */
+        #flipbook-frame {
+            width: 100%; flex-grow: 1; border: none; background: transparent;
+        }
+    </style>
+
+    <div id="flipbook-modal">
+        <div class="modal-header">
+            <h3><i class="fas fa-book-reader"></i> Inno Mind Study Vault</h3>
+            <button class="close-modal-btn" onclick="closeFlipbookModal()"><i class="fas fa-times"></i> Close Book</button>
+        </div>
+        <!-- The iframe acts as a window to our secure viewer -->
+        <iframe id="flipbook-frame" src=""></iframe>
+    </div>
+
+    <script>
+        function openFlipbookModal(pdfUrl) {
+            // 1. Set the source of the iframe to our secure viewer route
+            document.getElementById('flipbook-frame').src = "/secure_viewer?doc_url=" + encodeURIComponent(pdfUrl);
+            // 2. Show the modal
+            document.getElementById('flipbook-modal').style.display = 'flex';
+            // 3. Stop the background page from scrolling
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeFlipbookModal() {
+            // 1. Hide the modal
+            document.getElementById('flipbook-modal').style.display = 'none';
+            // 2. Clear the iframe source to stop video/audio/memory usage in the background
+            document.getElementById('flipbook-frame').src = "";
+            // 3. Allow the background page to scroll again
+            document.body.style.overflow = 'auto';
+        }
+    </script>
+        <!-- ===================================================== -->
+
 </body>
 </html>

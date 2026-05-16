@@ -25,7 +25,8 @@ def format_smart_tags(text):
         return ""
     # SECURE PDF FIX: Route clicks to our new secure Canvas renderer
     pdf_pattern = r'\[📄 Attached PDF: (https?://[^\s\]]+)\]'
-    pdf_html = r"""<br><a href="/secure_viewer?doc_url=\1" target="_blank" class="inno-pdf-btn" style="background:#e74c3c; color:white; padding:8px 15px; border-radius:5px; text-decoration:none; display:inline-block; margin:10px 0;"><i class="fas fa-file-pdf"></i> 📄 Open Secure Document</a><br>"""
+    # We removed href and target="_blank", and added onclick="openFlipbookModal('...')"
+    pdf_html = r"""<br><button onclick="openFlipbookModal('\1')" class="inno-pdf-btn" style="background:#2c3e50; color:white; padding:10px 20px; border-radius:30px; border:none; cursor:pointer; display:inline-block; margin:10px 0; font-weight:bold; box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: 0.3s;"><i class="fas fa-book-open"></i> 📖 Open 3D Flipbook</button><br>"""
     return re.sub(pdf_pattern, pdf_html, text)
 
 app.jinja_env.filters['format_smart'] = format_smart_tags
@@ -285,13 +286,24 @@ def study():
         flash("You are not enrolled in a course yet.")
         return redirect(url_for('home'))
         
-    # Strictly fetch from opsc_content (Theories/PDFs only, no MCQs)
+    # Strictly fetch from opsc_content
     docs = db.collection("opsc_content").where(filter=FieldFilter('course_values', 'array_contains', enrolled_course)).stream()
     
     tree = {}; content_dict = {}
     for doc in docs:
         d = doc.to_dict()
-        c = d.get('course', 'Uncategorized'); s = d.get('subject', 'General'); b = d.get('block', 'Block'); u = d.get('unit', 'Unit'); t = d.get('topic', 'Topic'); st = d.get('subtopic', 'Subtopic')
+        
+        # --- THE FIX IS HERE ---
+        # Instead of: c = d.get('course', 'Uncategorized')
+        # We FORCE the top folder to be the student's enrolled course!
+        c = enrolled_course 
+        
+        s = d.get('subject', 'General')
+        b = d.get('block', 'Block')
+        u = d.get('unit', 'Unit')
+        t = d.get('topic', 'Topic')
+        st = d.get('subtopic', 'Subtopic')
+        # -----------------------
         
         if c not in tree: tree[c] = {}
         if s not in tree[c]: tree[c][s] = {}
@@ -305,6 +317,7 @@ def study():
         html_body = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-width:100%; border-radius:8px; margin:15px 0;">', raw_body)
         html_body = format_smart_tags(html_body)
         
+        # Because we changed 'c', the breadcrumbs will also now display perfectly!
         content_dict[doc.id] = {'breadcrumbs': f"{c} &rarr; {s} &rarr; {b} &rarr; {u} &rarr; {t}", 'title': st, 'body': html_body}
 
     def generate_tree_html(node, depth=0, prefix="tier"):

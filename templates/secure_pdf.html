@@ -2,79 +2,308 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Inno Mind Secure Vault</title>
+    <title>Inno Mind | High-Res 3D Viewer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
     <style>
-        body { margin: 0; background-color: #333; display: flex; flex-direction: column; align-items: center; user-select: none; -webkit-user-select: none; }
-        #pdf-render { border: 1px solid #000; direction: ltr; box-shadow: 0 4px 8px rgba(0,0,0,0.5); margin-top: 20px; margin-bottom: 20px; }
-        .toolbar { background-color: #1E3A8A; width: 100%; padding: 15px; color: white; display: flex; justify-content: center; gap: 20px; align-items: center; position: sticky; top: 0; z-index: 100; font-family: sans-serif;}
-        button { background: #e74c3c; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold;}
-        button:hover { background: #c0392b; }
+        body { 
+            background: radial-gradient(circle, #2f3640 0%, #1e272e 100%);
+            margin: 0; display: flex; flex-direction: column; align-items: center; 
+            height: 100vh; overflow: hidden; font-family: 'Segoe UI', sans-serif;
+            user-select: none;
+        }
+        
+        /* --- SIDEBAR STYLES --- */
+        #sidebar {
+            position: fixed; top: 0; left: -300px; width: 250px; height: 100%;
+            background: rgba(15, 23, 30, 0.95); backdrop-filter: blur(15px);
+            box-shadow: 5px 0 25px rgba(0,0,0,0.5); z-index: 2000;
+            transition: left 0.3s ease; padding: 20px; box-sizing: border-box;
+            display: flex; flex-direction: column; color: white; border-right: 1px solid rgba(255,255,255,0.1);
+        }
+        #sidebar.open { left: 0; }
+        
+        .sidebar-header {
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px; margin-bottom: 15px;
+        }
+        .sidebar-header h3 { margin: 0; font-size: 18px; font-weight: 600; color: #0fb9b1; }
+        
+        #page-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+            overflow-y: auto; padding-right: 5px;
+        }
+        
+        /* Custom Scrollbar for Sidebar */
+        #page-grid::-webkit-scrollbar { width: 6px; }
+        #page-grid::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
+        
+        .grid-btn {
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            color: white; padding: 10px 0; border-radius: 6px; cursor: pointer;
+            transition: 0.2s; text-align: center; font-weight: bold;
+        }
+        .grid-btn:hover { background: #0fb9b1; color: #1e272e; transform: scale(1.05); border-color: #0fb9b1; }
+
+        /* --- FLOATING CONTROLS --- */
+        #controls {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(10px);
+            padding: 12px 25px; border-radius: 50px; display: flex; gap: 20px;
+            align-items: center; z-index: 1000; border: 1px solid rgba(255,255,255,0.1);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .control-btn {
+            color: white; cursor: pointer; font-size: 18px; transition: 0.3s;
+            background: none; border: none; padding: 0; display: flex; align-items: center; justify-content: center;
+        }
+        .control-btn:hover { color: #0fb9b1; transform: scale(1.2); }
+        .divider { width: 1px; height: 20px; background: rgba(255,255,255,0.3); }
+
+        /* Page Input Styles */
+        .page-nav { display: flex; align-items: center; gap: 8px; color: white; font-weight: bold; font-size: 14px; }
+        #page-input {
+            width: 40px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3);
+            color: white; text-align: center; border-radius: 4px; padding: 4px; font-weight: bold;
+        }
+        #page-input:focus { outline: none; border-color: #0fb9b1; }
+        
+        #flipbook-container { flex-grow: 1; display: flex; justify-content: center; align-items: center; width: 100%; }
+        .page { background: white; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        canvas { width: 100%; height: 100%; pointer-events: none; }
+
+        #loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #1e272e; display: flex; flex-direction: column; 
+            justify-content: center; align-items: center; color: white; z-index: 3000;
+        }
+        .spinner {
+            border: 4px solid rgba(255,255,255,0.1); width: 40px; height: 40px;
+            border-radius: 50%; border-left-color: #0fb9b1;
+            animation: spin 1s linear infinite; margin-bottom: 20px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 </head>
-<body oncontextmenu="return false;"> <div class="toolbar">
-        <span><i class="fas fa-lock"></i> SECURE VAULT (Downloads Disabled)</span>
-        <button id="prev-page">Previous Page</button>
-        <span>Page: <span id="page-num"></span> / <span id="page-count"></span></span>
-        <button id="next-page">Next Page</button>
+<body>
+
+<!-- Loading Screen -->
+<div id="loading-overlay">
+    <div class="spinner"></div>
+    <h3>Assembling Study Vault...</h3>
+</div>
+
+<!-- Slide-Out Sidebar -->
+<div id="sidebar">
+    <div class="sidebar-header">
+        <h3><i class="fas fa-th"></i> Quick Jump</h3>
+        <button class="control-btn" onclick="toggleSidebar()"><i class="fas fa-times"></i></button>
     </div>
+    <div id="page-grid">
+        <!-- Page buttons injected via JS -->
+    </div>
+</div>
 
-    <canvas id="pdf-render"></canvas>
+<!-- Main Book Container -->
+<div id="flipbook-container">
+    <div id="flipbook"></div>
+</div>
 
-    <script>
-        const url = "{{ pdf_url }}";
-        let pdfDoc = null, pageNum = 1, pageIsRendering = false, pageNumIsPending = null;
-        const scale = 1.5, canvas = document.querySelector('#pdf-render'), ctx = canvas.getContext('2d');
+<!-- Floating Controls -->
+<div id="controls">
+    <button class="control-btn" onclick="toggleSidebar()" title="Open Index"><i class="fas fa-bars"></i></button>
+    <div class="divider"></div>
+    
+    <!-- Page Navigation -->
+    <div class="page-nav">
+        <input type="number" id="page-input" value="1" min="1" onchange="jumpToPage(this.value)">
+        <span>/ <span id="total-pages">...</span></span>
+    </div>
+    <div class="divider"></div>
 
-        // Set worker path
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    <button class="control-btn" onclick="adjustZoom(-0.2)" title="Zoom Out"><i class="fas fa-search-minus"></i></button>
+    <span id="zoom-level" style="color: #0fb9b1; font-weight: bold; min-width: 45px; text-align: center;">100%</span>
+    <button class="control-btn" onclick="adjustZoom(0.2)" title="Zoom In"><i class="fas fa-search-plus"></i></button>
+    <div class="divider"></div>
+    
+    <button class="control-btn" onclick="toggleFullScreen()" title="Full Screen"><i class="fas fa-expand"></i></button>
+</div>
 
-        const renderPage = num => {
-            pageIsRendering = true;
-            pdfDoc.getPage(num).then(page => {
-                const viewport = page.getViewport({ scale });
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
+<script>
+    const pdfUrl = "{{ pdf_url }}";
+    const pdfjsLib = window['pdfjs-dist/build/pdf'];
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-                const renderCtx = { canvasContext: ctx, viewport };
-                page.render(renderCtx).promise.then(() => {
-                    pageIsRendering = false;
-                    if (pageNumIsPending !== null) {
-                        renderPage(pageNumIsPending);
-                        pageNumIsPending = null;
-                    }
-                });
-                document.querySelector('#page-num').textContent = num;
+    let pageFlip;
+    let currentZoom = 1.0;
+    let totalPdfPages = 0;
+    
+    // Drag & Pan Variables
+    let isDragging = false;
+    let startX, startY;
+    let translateX = 0, translateY = 0;
+    const container = document.getElementById('flipbook-container');
+
+    function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+
+    // --- NAVIGATION LOGIC ---
+    function jumpToPage(pageNum) {
+        let target = parseInt(pageNum);
+        if (target < 1) target = 1;
+        if (target > totalPdfPages) target = totalPdfPages;
+        
+        document.getElementById('page-input').value = target;
+        
+        // PageFlip uses zero-based indexing (Page 1 = Index 0)
+        if (pageFlip) pageFlip.flip(target - 1);
+    }
+
+    function updateTransform(useAnimation = false) {
+        container.style.transition = useAnimation ? 'transform 0.3s ease-out' : 'none';
+        container.style.transform = `translate(${translateX}px, ${translateY}px) scale(${currentZoom})`;
+    }
+
+    function adjustZoom(delta) {
+        currentZoom = Math.min(Math.max(0.6, currentZoom + delta), 3.0); 
+        const flipbookDiv = document.getElementById('flipbook');
+        
+        if (currentZoom <= 1.0) {
+            translateX = 0; translateY = 0;
+            container.style.cursor = 'default';
+            flipbookDiv.style.pointerEvents = 'auto'; 
+        } else {
+            container.style.cursor = 'grab';
+            flipbookDiv.style.pointerEvents = 'none'; 
+        }
+        
+        updateTransform(true);
+        document.getElementById('zoom-level').innerText = Math.round(currentZoom * 100) + "%";
+    }
+
+    // --- MOUSE & TOUCH DRAGGING ---
+    container.addEventListener('mousedown', (e) => {
+        if (currentZoom > 1.0) {
+            isDragging = true;
+            startX = e.clientX - translateX; startY = e.clientY - translateY;
+            container.style.cursor = 'grabbing';
+        }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        translateX = e.clientX - startX; translateY = e.clientY - startY;
+        updateTransform(false); 
+    });
+
+    window.addEventListener('mouseup', () => {
+        isDragging = false;
+        if (currentZoom > 1.0) container.style.cursor = 'grab';
+    });
+
+    container.addEventListener('touchstart', (e) => {
+        if (currentZoom > 1.0 && e.touches.length === 1) {
+            isDragging = true;
+            startX = e.touches[0].clientX - translateX; startY = e.touches[0].clientY - translateY;
+        }
+    }, {passive: true});
+
+    window.addEventListener('touchmove', (e) => {
+        if (!isDragging || e.touches.length !== 1) return;
+        translateX = e.touches[0].clientX - startX; translateY = e.touches[0].clientY - startY;
+        updateTransform(false);
+    });
+
+    window.addEventListener('touchend', () => { isDragging = false; });
+
+    function toggleFullScreen() {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+        else if (document.exitFullscreen) document.exitFullscreen();
+    }
+
+    async function startViewer() {
+        try {
+            const loadingTask = pdfjsLib.getDocument(pdfUrl);
+            const pdf = await loadingTask.promise;
+            const flipbookDiv = document.getElementById('flipbook');
+            
+            totalPdfPages = pdf.numPages;
+            document.getElementById('total-pages').innerText = totalPdfPages;
+
+            // Generate Sidebar Grid Buttons
+            const grid = document.getElementById('page-grid');
+            for (let i = 1; i <= totalPdfPages; i++) {
+                const btn = document.createElement('button');
+                btn.className = 'grid-btn';
+                btn.innerText = i;
+                btn.onclick = () => { 
+                    jumpToPage(i); 
+                    if(window.innerWidth < 768) toggleSidebar(); // Auto-close on mobile
+                };
+                grid.appendChild(btn);
+            }
+
+            const firstPage = await pdf.getPage(1);
+            const baseViewport = firstPage.getViewport({ scale: 1.0 });
+            const targetHeight = window.innerHeight * 0.8;
+            let scale = targetHeight / baseViewport.height;
+            
+            if ((baseViewport.width * scale) * 2 > window.innerWidth * 0.9) {
+                scale = (window.innerWidth * 0.9) / (baseViewport.width * 2);
+            }
+
+            const renderScale = scale * 2; 
+            const viewport = firstPage.getViewport({ scale: renderScale });
+            const renderPromises = [];
+
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const pageDiv = document.createElement('div');
+                pageDiv.className = 'page';
+                
+                const canvas = document.createElement('canvas');
+                canvas.width = viewport.width; canvas.height = viewport.height;
+                
+                pageDiv.style.width = (viewport.width / 2) + "px"; 
+                pageDiv.style.height = (viewport.height / 2) + "px";
+                
+                pageDiv.appendChild(canvas);
+                flipbookDiv.appendChild(pageDiv);
+
+                const page = await pdf.getPage(i);
+                renderPromises.push(page.render({
+                    canvasContext: canvas.getContext('2d'),
+                    viewport: viewport
+                }).promise);
+            }
+
+            await Promise.all(renderPromises);
+
+            pageFlip = new St.PageFlip(flipbookDiv, {
+                width: viewport.width / 2,
+                height: viewport.height / 2,
+                size: "fixed",
+                showCover: true,
+                usePortrait: false
             });
-        };
 
-        const queueRenderPage = num => {
-            if (pageIsRendering) { pageNumIsPending = num; } else { renderPage(num); }
-        };
+            pageFlip.loadFromHTML(document.querySelectorAll('.page'));
+            
+            // Sync the input box when the user manually drags the page to flip
+            pageFlip.on('flip', (e) => {
+                // e.data is the new page index
+                document.getElementById('page-input').value = e.data + 1;
+            });
 
-        document.querySelector('#prev-page').addEventListener('click', () => {
-            if (pageNum <= 1) return;
-            pageNum--;
-            queueRenderPage(pageNum);
-        });
+            document.getElementById('loading-overlay').style.display = 'none';
 
-        document.querySelector('#next-page').addEventListener('click', () => {
-            if (pageNum >= pdfDoc.numPages) return;
-            pageNum++;
-            queueRenderPage(pageNum);
-        });
+        } catch (err) {
+            console.error(err);
+            alert("Could not load high-res document.");
+        }
+    }
 
-        // Fetch PDF Document
-        pdfjsLib.getDocument(url).promise.then(pdfDoc_ => {
-            pdfDoc = pdfDoc_;
-            document.querySelector('#page-count').textContent = pdfDoc.numPages;
-            renderPage(pageNum);
-        });
-
-        // Block keyboard shortcuts (Ctrl+S, Ctrl+P)
-        document.addEventListener('keydown', function(e) {
-            if (e.ctrlKey && (e.key === 's' || e.key === 'p' || e.key === 'c')) { e.preventDefault(); }
-        });
-    </script>
+    startViewer();
+</script>
 </body>
 </html>
