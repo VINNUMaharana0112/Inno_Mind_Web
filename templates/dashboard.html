@@ -47,16 +47,6 @@
     </style>
 </head>
 
-<div style="text-align: center; margin-top: 50px; padding: 20px; color: #7f8c8d; font-size: 12px;">
-        <a href="/terms" style="color: #7f8c8d; text-decoration: none; margin: 0 10px;">Terms & Conditions</a> |
-        <a href="/privacy" style="color: #7f8c8d; text-decoration: none; margin: 0 10px;">Privacy Policy</a> |
-        <a href="/refund" style="color: #7f8c8d; text-decoration: none; margin: 0 10px;">Refund Policy</a> |
-        <a href="/cancellation" style="color: #7f8c8d; text-decoration: none; margin: 0 10px;">Cancellation Policy</a> |
-        <a href="/contact" style="color: #7f8c8d; text-decoration: none; margin: 0 10px;">Contact Us</a>
-        <br><br>
-        &copy; 2026 Inno Mind Academy. All rights reserved.
-    </div>
-
 <body>
     <div class="header">
         <h2>Hi, {{ user_name }}! 👋</h2>
@@ -248,5 +238,61 @@
                 });
         }, 10000);
     </script>
+
+<!-- ================= INNO MIND FOOTER ================= -->
+<style>
+    /* Styling to match the dark Inno Mind theme */
+    .inno-footer {
+        width: 100%;
+        background: rgba(15, 23, 30, 0.8);
+        backdrop-filter: blur(10px);
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+        padding: 25px 0;
+        text-align: center;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        margin-top: 50px; /* Pushes the footer away from the main content */
+    }
+    
+    .footer-links {
+        margin-bottom: 12px;
+    }
+    
+    .footer-links a {
+        color: #a4b0be; /* Soft grey */
+        text-decoration: none;
+        font-size: 14px;
+        margin: 0 10px;
+        transition: color 0.3s ease;
+    }
+    
+    .footer-links a:hover {
+        color: #0fb9b1; /* Inno Mind teal highlight */
+    }
+    
+    .footer-divider {
+        color: #576574;
+        font-size: 12px;
+    }
+
+    .footer-copyright {
+        font-size: 13px;
+        color: #747d8c;
+    }
+</style>
+
+<footer class="inno-footer">
+    <div class="footer-links">
+        <a href="/terms">Terms & Conditions</a> <span class="footer-divider">|</span>
+        <a href="/privacy">Privacy Policy</a> <span class="footer-divider">|</span>
+        <a href="/refund">Refund Policy</a> <span class="footer-divider">|</span>
+        <a href="/cancellation">Cancellation Policy</a> <span class="footer-divider">|</span>
+        <a href="/contact">Contact Us</a>
+    </div>
+    <div class="footer-copyright">
+        &copy; 2026 Inno Mind Academy. All rights reserved.
+    </div>
+</footer>
+<!-- ==================================================== -->
+
 </body>
 </html>
