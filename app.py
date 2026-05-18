@@ -562,173 +562,151 @@ def update_live_board():
 
 # ================= REAL PAYMENT GATEWAY (RAZORPAY) =================
 # We use os.environ to keep keys hidden from GitHub. 
-# If they aren't in the environment, it uses the hardcoded string (ONLY use test keys for the hardcoded string!)
-RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'rzp_live_SW9omOnzjAKQ3e') 
-RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '4EfPk2xQMk2xDP0ieok6a11G')
+# REPLACE THESE WITH YOUR KEYS BEFORE DEPLOYING!
+RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'rzp_test_Sqng5W9WzwHJZe') 
+RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'VdrgVmLO6tT5hNtrKc0kemMj')
 rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+
+# --- Standard Pages ---
+@app.route('/terms')
+def terms(): return render_template('terms.html')
+@app.route('/privacy')
+def privacy(): return render_template('privacy.html')
+@app.route('/refund')
+def refund(): return render_template('refund.html')
+@app.route('/contact')
+def contact(): return render_template('contact.html')
+@app.route('/cancellation')
+def cancellation(): return render_template('cancellation.html')
 
 @app.route('/checkout/<package_id>')
 def checkout_page(package_id):
-    if 'user_email' not in session:
-        return redirect(url_for('login'))
-        
-    # Fetch the specific course the user clicked on
+    if 'user_email' not in session: return redirect(url_for('login'))
     pkg_doc = db.collection('subscription_packages').document(package_id).get()
-    
-    if not pkg_doc.exists:
-        return "<h1>Error</h1><p>Course not found in the database.</p>", 404
+    if not pkg_doc.exists: return "<h1>Error</h1><p>Course not found.</p>", 404
         
     package_data = pkg_doc.to_dict()
     package_data['id'] = pkg_doc.id
-    
-    # Make sure 'checkout.html' exactly matches your file name (Checkout.html vs checkout.html)
     return render_template('checkout.html', package=package_data)
 
-@app.route('/terms')
-def terms():
-    return render_template('terms.html')
-
-@app.route('/privacy')
-def privacy():
-    return render_template('privacy.html')
-
-@app.route('/refund')
-def refund():
-    return render_template('refund.html')
-
-@app.route('/contact')
-def contact():
-    return render_template('contact.html')
-
-@app.route('/cancellation')
-def cancellation():
-    return render_template('cancellation.html')
-
+# ================= 1. SECURE ORDER CREATION =================
 @app.route('/create_order', methods=['POST'])
 def create_order():
     data = request.json
-    amount = int(data.get('amount')) * 100  # Razorpay needs paise
-    
+    item_type = data.get('type') # Expected: 'subscription' or 'mentorship'
+    amount = 0
+
     try:
-        # Create the order in Razorpay
-        order_data = {
-            'amount': amount,
-            'currency': 'INR',
-            'payment_capture': '1'
-        }
+        # A. DYNAMIC PRICING FOR SUBSCRIPTIONS
+        if item_type == 'subscription':
+            package_id = data.get('package_id')
+            pkg_doc = db.collection('subscription_packages').document(package_id).get()
+            if not pkg_doc.exists: return jsonify({'error': 'Package not found'}), 404
+            amount = int(pkg_doc.to_dict().get('price', 0))
+
+        # B. DYNAMIC PRICING FOR MENTORSHIP
+        elif item_type == 'mentorship':
+            subject = data.get('subject')
+            actual_price = MENTORSHIP_RATE_CARD.get(subject)
+            if not actual_price: return jsonify({'error': 'Invalid subject pricing'}), 400
+            amount = int(actual_price)
+
+        if amount <= 0:
+            return jsonify({'error': 'Invalid amount or free item.'}), 400
+
+        # Create the order securely on Razorpay's Server
+        order_data = {'amount': amount * 100, 'currency': 'INR', 'payment_capture': '1'}
         order = rzp_client.order.create(data=order_data)
         
-        # Send the order ID AND your Key ID back to Javascript safely
         return jsonify({
             'order_id': order['id'],
-            'amount': amount,
-            'key_id': RAZORPAY_KEY_ID  # FIXED: Now it sends the real key!
+            'amount': amount * 100,
+            'key_id': RAZORPAY_KEY_ID 
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ================= 2. VERIFY & FULFILLMENT =================
 @app.route('/verify_payment', methods=['POST'])
 def verify_payment():
     student_email = session.get('user_email')
     data = request.json
     try:
+        # 1. VERIFY THE SECURE SIGNATURE
         rzp_client.utility.verify_payment_signature({
             'razorpay_order_id': data.get('razorpay_order_id'),
             'razorpay_payment_id': data.get('razorpay_payment_id'),
             'razorpay_signature': data.get('razorpay_signature')
         })
         
-        package_id = data.get('package_id')
-        pkg_doc = db.collection("subscription_packages").document(package_id).get()
-        pkg_data = pkg_doc.to_dict()
-        
-        target_course = pkg_data.get('target_course', '')
-        
-        # --- NEW DATE CALCULATION LOGIC ---
-        # Fetch validity days (Defaults to 365 days if you forget to add it in Firebase)
-        validity_days = int(pkg_data.get('validity_days', 365)) 
-        start_date = datetime.now()
-        end_date = start_date + timedelta(days=validity_days)
-        
-        db.collection("users").document(student_email).update({
-            "subscription": package_id, 
-            "enrolled_course": target_course,
-            "sub_start_date": start_date.strftime("%Y-%m-%d"),
-            "sub_end_date": end_date.strftime("%Y-%m-%d")
-        })
-        # ----------------------------------
+        item_type = data.get('type')
 
-        return jsonify({"status": "success", "message": "Account Upgraded Successfully!"})
+        # 2. UPGRADE SUBSCRIPTION
+        if item_type == 'subscription':
+            package_id = data.get('package_id')
+            pkg_doc = db.collection("subscription_packages").document(package_id).get()
+            pkg_data = pkg_doc.to_dict()
+            
+            target_course = pkg_data.get('target_course', '')
+            validity_days = int(pkg_data.get('validity_days', 365)) 
+            start_date = datetime.now()
+            end_date = start_date + timedelta(days=validity_days)
+            
+            db.collection("users").document(student_email).update({
+                "subscription": package_id, 
+                "enrolled_course": target_course,
+                "sub_start_date": start_date.strftime("%Y-%m-%d"),
+                "sub_end_date": end_date.strftime("%Y-%m-%d")
+            })
+            return jsonify({"status": "success", "message": "Account Upgraded Successfully!"})
+
+        # 3. BOOK MENTORSHIP SLOT
+        elif item_type == 'mentorship':
+            slot_id = data.get('slot_id')
+            subject = data.get('subject')
+            topic_desc = data.get('topic_desc')
+            actual_price = MENTORSHIP_RATE_CARD.get(subject)
+
+            db.collection("mentorship_slots").document(slot_id).update({
+                "status": "booked",
+                "booked_by": student_email,
+                "subject": subject,
+                "topic": topic_desc,
+                "price": actual_price
+            })
+            return jsonify({"status": "success", "message": "Mentorship Slot Confirmed!"})
+
     except Exception as e:
         return jsonify({"status": "failed", "error": str(e)}), 500
 
 # =================================================================
 # ================= MENTORSHIP & DOUBT CLEARANCE =================
 # =================================================================
-
-# The Master Rate Card: This acts as your un-hackable backend vault. 
-# Even if a student tries to alter the pricing on their web browser,
-# the backend forces them to pay these exact hourly rates.
 MENTORSHIP_RATE_CARD = {
-    "Arithmetic / Basic Math": 299,
-    "Reasoning / Logical Aptitude": 399,
+    "Arithmetic / Basic Math": 1499,
+    "Reasoning / Logical Aptitude": 1799,
     "History / General Studies": 499,
-    "Physics / Higher Math": 899,
-    "Bespoke Career Counseling": 1499
+    "Physics / Higher Math": 1899,
+    "Career Counseling and Consultation": 1499
 }
 
 @app.route('/mentorship')
 def mentorship_hub():
     if 'user_email' not in session: return redirect(url_for('login'))
     
-    # 1. Fetch OPEN slots for the student to buy
     slots_ref = db.collection("mentorship_slots").where(filter=FieldFilter("status", "==", "available")).stream()
     available_slots = [{"id": doc.id, **doc.to_dict()} for doc in slots_ref]
     available_slots.sort(key=lambda x: (x.get('date', ''), x.get('start_time', '')))
     
-    # 2. Fetch BOOKED slots that belong specifically to this student
     my_slots_ref = db.collection("mentorship_slots").where(filter=FieldFilter("booked_by", "==", session['user_email'])).stream()
     my_booked_slots = [{"id": doc.id, **doc.to_dict()} for doc in my_slots_ref]
     my_booked_slots.sort(key=lambda x: (x.get('date', ''), x.get('start_time', '')))
     
-    # Pass both lists to the HTML template
     return render_template('mentorship.html', slots=available_slots, my_slots=my_booked_slots)
-
-@app.route('/process_mentorship_payment', methods=['POST'])
-def process_mentorship_payment():
-    if 'user_email' not in session: return redirect(url_for('login'))
-    
-    slot_id = request.form.get('slot_id')
-    subject = request.form.get('subject')
-    topic_desc = request.form.get('topic_desc')
-    
-    # SECURITY AUDIT: Verify the subject exists and match it to its real price
-    actual_price = MENTORSHIP_RATE_CARD.get(subject)
-    if not actual_price:
-        return "Invalid subject configuration detected.", 400
-        
-    # ---------------------------------------------------------------
-    # 🛠️ PRO TIP FOR RAZORPAY INTEGRATION:
-    # When you are ready to make payments live, you will insert your
-    # order creation script here using: amount = actual_price * 100
-    # ---------------------------------------------------------------
-    
-    # Successful Transaction Processor: Map student choices to the open slot
-    db.collection("mentorship_slots").document(slot_id).update({
-        "status": "booked",
-        "booked_by": session['user_email'],
-        "subject": subject,
-        "topic": topic_desc,
-        "price": actual_price
-    })
-    
-    flash(f"🎉 Slot confirmed! Your 1-on-1 session for '{subject}' is locked.")
-    return redirect(url_for('home'))
 
 @app.route('/live_session/<slot_id>')
 def live_session(slot_id):
     if 'user_email' not in session: return redirect(url_for('login'))
-    
     slot_doc = db.collection("mentorship_slots").document(slot_id).get()
     if not slot_doc.exists: return "Session not found", 404
     
@@ -736,24 +714,18 @@ def live_session(slot_id):
     user_email = session['user_email']
     user_role = session.get('user_role')
     
-    # GATEKEEPER SECURITY: Only allow the matched student OR the Master Admin to enter
     if slot_data.get('booked_by') != user_email and user_role != 'Admin':
         return "Access Denied: You do not have booking credentials for this private room.", 403
         
-    return render_template('live_session.html', 
-                           slot_id=slot_id, 
-                           user_name=session.get('user_name'),
-                           end_time=slot_data.get('end_datetime_str'))
+    return render_template('live_session.html', slot_id=slot_id, user_name=session.get('user_name'), end_time=slot_data.get('end_datetime_str'))
 
 @app.route('/review_session/<slot_id>', methods=['GET', 'POST'])
 def review_session(slot_id):
     if 'user_email' not in session: return redirect(url_for('login'))
-    
     if request.method == 'POST':
         rating = int(request.form.get('rating', 5))
         review_text = request.form.get('review_text', '')
         
-        # Archive review details globally to broadcast on your storefront later
         db.collection("mentorship_reviews").add({
             "slot_id": slot_id,
             "student_email": session['user_email'],

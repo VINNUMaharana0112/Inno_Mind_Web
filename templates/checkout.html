@@ -57,10 +57,14 @@
             msg.style.display = 'block';
 
             // 1. Ask Python to generate a secure Razorpay Order ID
+            // Notice: We do NOT send the price here. The backend fetches it securely.
             fetch('/create_order', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ package_id: "{{ package.id }}", amount: {{ package.price }} })
+                body: JSON.stringify({ 
+                    type: 'subscription', 
+                    package_id: "{{ package.id }}" 
+                })
             })
             .then(response => response.json())
             .then(data => {
@@ -74,7 +78,7 @@
                 // 2. Configure the Razorpay Popup
                 var options = {
                     "key": data.key_id,
-                    "amount": data.amount,
+                    "amount": data.amount, // Real amount fetched from backend
                     "currency": "INR",
                     "name": "Inno Mind Academy",
                     "description": "{{ package.name }}",
@@ -87,15 +91,15 @@
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
+                                type: 'subscription',
+                                package_id: "{{ package.id }}",
                                 razorpay_order_id: response.razorpay_order_id,
                                 razorpay_payment_id: response.razorpay_payment_id,
-                                razorpay_signature: response.razorpay_signature,
-                                package_id: "{{ package.id }}"
+                                razorpay_signature: response.razorpay_signature
                             })
                         })
                         .then(res => res.json())
                         .then(verifyData => {
-                            // Using toLowerCase() just in case Python sends "Success" or "success"
                             if(verifyData.status.toLowerCase() === "success") {
                                 window.location.href = "/"; // Send them to the dashboard!
                             } else {

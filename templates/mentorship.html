@@ -36,7 +36,9 @@
         .pay-btn { background: #27ae60; color: white; border: none; padding: 15px; border-radius: 8px; width: 100%; font-size: 16px; font-weight: bold; cursor: pointer; }
         .pay-btn:hover { background: #2196f3; }
         .close-btn { background: #e74c3c; margin-top: 10px; }
+        .close-btn:hover { background: #c0392b; }
     </style>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
 <body>
 
@@ -45,7 +47,6 @@
         <p>Select an open slot from Senior Lecturer Sibasankar Maharana's calendar.</p>
     </div>
 
-    <!-- ================= MY UPCOMING SESSIONS ================= -->
     {% if my_slots %}
     <div style="max-width: 1000px; margin: 0 auto 40px; background: white; padding: 25px; border-radius: 12px; border-top: 4px solid #9b59b6; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
         <h2 style="color: #2c3e50; margin-top: 0;"><i class="fas fa-ticket-alt"></i> My Booked Sessions</h2>
@@ -65,8 +66,6 @@
         </div>
     </div>
     {% endif %}
-    <!-- ======================================================== -->
-
     <div class="slot-grid">
         {% for slot in slots %}
         <div class="slot-card">
@@ -79,13 +78,12 @@
         {% endfor %}
     </div>
 
-    <!-- The Checkout Modal -->
     <div id="booking-modal">
         <div class="modal-content">
             <h3><i class="fas fa-sliders-h"></i> Configure Session</h3>
             <p id="modal-slot-info" style="color: #7f8c8d; font-weight:bold;"></p>
             
-            <form id="booking-form" action="/process_mentorship_payment" method="POST">
+            <form id="booking-form">
                 <input type="hidden" name="slot_id" id="modal_slot_id">
                 
                 <label><strong>1. Select Subject / Service:</strong></label>
@@ -99,7 +97,7 @@
                 </select>
 
                 <label><strong>2. What exactly do you need help with?</strong></label>
-                <textarea name="topic_desc" rows="3" placeholder="e.g., I am struggling with finding the angle between clock hands." required></textarea>
+                <textarea name="topic_desc" id="topic_desc" rows="3" placeholder="e.g., I am struggling with finding the angle between clock hands." required></textarea>
 
                 <div class="price-box">
                     <div>Your Session Rate:</div>
@@ -113,7 +111,7 @@
     </div>
 
     <script>
-        // The Admin Rate Card Engine
+        // The Visual Rate Card (Used ONLY for display. Actual charge comes from app.py)
         const rateCard = {
             "Arithmetic / Basic Math": 299,
             "Reasoning / Logical Aptitude": 399,
@@ -142,6 +140,94 @@
                 submitBtn.disabled = false; // Enable the pay button
             }
         }
+
+        // --- THE RAZORPAY BRIDGE ---
+        document.getElementById('booking-form').onsubmit = function (e) {
+            e.preventDefault(); 
+            
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+
+            let slotId = document.getElementById('modal_slot_id').value;
+            let subject = document.getElementById('subject-select').value;
+            let topicDesc = document.getElementById('topic_desc').value;
+
+            // 1. Tell backend to create order for this specific subject
+            fetch('/create_order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type: 'mentorship',
+                    slot_id: slotId,
+                    subject: subject,
+                    topic_desc: topicDesc
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.error) {
+                    alert("Error: " + data.error);
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-lock"></i> Lock Slot & Proceed to Pay';
+                    return;
+                }
+
+                // 2. Open Razorpay
+                var options = {
+                    "key": data.key_id,
+                    "amount": data.amount,
+                    "currency": "INR",
+                    "name": "Inno Mind Mentorship",
+                    "description": "1-on-1 Session: " + subject,
+                    "order_id": data.order_id,
+                    "handler": function (response) {
+                        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying Payment...';
+                        
+                        // 3. Verify Payment
+                        fetch('/verify_payment', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                type: 'mentorship',
+                                slot_id: slotId,
+                                subject: subject,
+                                topic_desc: topicDesc,
+                                razorpay_order_id: response.razorpay_order_id,
+                                razorpay_payment_id: response.razorpay_payment_id,
+                                razorpay_signature: response.razorpay_signature
+                            })
+                        })
+                        .then(res => res.json())
+                        .then(verifyData => {
+                            if(verifyData.status.toLowerCase() === "success") {
+                                alert("Slot Confirmed! See you in the session.");
+                                window.location.reload(); // Reload to show slot as booked
+                            } else {
+                                alert("Payment Verification Failed! " + verifyData.error);
+                                submitBtn.disabled = false;
+                                submitBtn.innerHTML = '<i class="fas fa-lock"></i> Lock Slot & Proceed to Pay';
+                            }
+                        });
+                    },
+                    "theme": { "color": "#27ae60" } // Matching your success green color
+                };
+                
+                var rzp = new Razorpay(options);
+                rzp.on('payment.failed', function (response){
+                    alert("Payment Cancelled or Failed. Reason: " + response.error.description);
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-lock"></i> Lock Slot & Proceed to Pay';
+                });
+                rzp.open();
+            })
+            .catch(err => {
+                console.error(err);
+                alert("Network error. Could not connect to payment server.");
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-lock"></i> Lock Slot & Proceed to Pay';
+            });
+        };
     </script>
 </body>
 </html>
