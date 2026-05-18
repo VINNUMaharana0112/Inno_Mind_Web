@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Inno Mind | Live 1-on-1 Mentorship</title>
+    <!-- The official Jitsi Meet API -->
+    <script src='https://meet.jit.si/external_api.js'></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { 
+            margin: 0; background: #1e272e; color: white; 
+            font-family: 'Segoe UI', sans-serif; display: flex; 
+            flex-direction: column; height: 100vh; overflow: hidden; 
+        }
+        
+        #header { 
+            padding: 15px 30px; background: rgba(0,0,0,0.5); 
+            display: flex; justify-content: space-between; align-items: center; 
+            border-bottom: 1px solid rgba(255,255,255,0.1); 
+            flex-shrink: 0; /* Prevents the header from squishing */
+        }
+        
+        #header h2 { margin: 0; color: white; font-size: 20px; }
+        
+        #timer-box { 
+            font-size: 18px; font-weight: bold; color: #0fb9b1; 
+            background: rgba(255,255,255,0.1); padding: 8px 15px; border-radius: 8px; 
+        }
+        
+        .danger { color: #ff4757 !important; animation: pulse 1s infinite; }
+        
+        /* Forces the video to take up all remaining space */
+        #meet-container { 
+            position: relative; width: 100%; flex-grow: 1; background: #000; 
+        }
+        
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <div id="header">
+        <h2><i class="fas fa-video"></i> Inno Mind Mentorship Room</h2>
+        <div id="timer-box">Time Remaining: <span id="time-left">Loading...</span></div>
+    </div>
+    
+    <!-- The Video Call will render strictly inside this div -->
+    <div id="meet-container"></div>
+
+<script>
+    // 1. Initialize the Video Call (Upgraded Configuration)
+    const domain = 'meet.jit.si';
+    const options = {
+        roomName: "InnoMind_Slot_{{ slot_id }}",
+        width: '100%',
+        height: '100%',
+        parentNode: document.getElementById('meet-container'),
+        userInfo: {
+            displayName: "{{ user_name }}"
+        },
+        configOverwrite: {
+            disableDeepLinking: true,     // 🛑 Forces Jitsi to stay in the web browser! No app downloads.
+            prejoinPageEnabled: false,    // ⏭️ Skips the annoying "Join Meeting" lobby screen
+            startWithAudioMuted: false,
+            startWithVideoMuted: false
+        },
+        interfaceConfigOverwrite: {
+            SHOW_CHROME_EXTENSION_BANNER: false,
+            MOBILE_APP_PROMO: false       // 🛑 Hides the mobile app promo
+        }
+    };
+    
+    // Launch Jitsi
+    const api = new JitsiMeetExternalAPI(domain, options);
+
+    // 2. Safe Timer Engine
+    const endTimeStr = "{{ end_time }}"; 
+    let endTime = new Date(endTimeStr).getTime();
+    
+    if (isNaN(endTime)) {
+        endTime = new Date().getTime() + (60 * 60 * 1000); 
+    }
+
+    const timerInterval = setInterval(function() {
+        const now = new Date().getTime();
+        const distance = endTime - now;
+
+        if (distance < 0) {
+            clearInterval(timerInterval);
+            document.getElementById("time-left").innerHTML = "SESSION EXPIRED";
+            document.getElementById("timer-box").classList.add("danger");
+            
+            try { api.dispose(); } catch(e) {}
+            
+            window.location.href = "/review_session/{{ slot_id }}";
+        } else {
+            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+            
+            document.getElementById("time-left").innerHTML = minutes + "m " + seconds + "s ";
+            
+            if (minutes < 5) {
+                document.getElementById("timer-box").classList.add("danger");
+            }
+        }
+    }, 1000);
+</script>
+</body>
+</html>

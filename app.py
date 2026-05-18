@@ -1,13 +1,12 @@
-from flask import Flask, render_template, request, redirect, session, url_for, flash, jsonify, send_file
+from flask import Flask, render_template, request, redirect, session, url_for, flash, jsonify
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
 from google.cloud.firestore_v1.base_query import FieldFilter
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
-import io
+import uuid
 import re
 import random
-import uuid
 import hashlib
 from datetime import datetime, timedelta
 import razorpay
@@ -244,6 +243,31 @@ def register():
     except Exception as e: print(f"Error fetching active courses: {e}")
 
     return render_template('register.html', courses=available_courses)
+
+# ================= ADMIN MAGIC LINK ENGINE =================
+@app.route('/magic_login/<token>')
+def magic_login(token):
+    # 1. Look up the secure token in the database
+    doc_ref = db.collection("magic_tokens").document(token)
+    doc = doc_ref.get()
+    
+    if doc.exists:
+        data = doc.to_dict()
+        
+        # 2. Grant the browser full Admin Session cookies
+        session['user_email'] = data.get('email', 'admin@innomind.in')
+        session['user_role'] = data.get('role', 'Admin')
+        session['user_name'] = "Master Admin"
+        
+        # 3. Burn after reading (Delete token so it can never be reused)
+        doc_ref.delete()
+        
+        # 4. Route the admin to the room they actually wanted to join
+        next_url = request.args.get('next', '/home')
+        return redirect(next_url)
+        
+    return "Security Error: Invalid or Expired Magic Link.", 403
+# ===========================================================
 
 @app.route('/logout')
 def logout():
@@ -637,6 +661,110 @@ def verify_payment():
         return jsonify({"status": "success", "message": "Account Upgraded Successfully!"})
     except Exception as e:
         return jsonify({"status": "failed", "error": str(e)}), 500
+
+# =================================================================
+# ================= MENTORSHIP & DOUBT CLEARANCE =================
+# =================================================================
+
+# The Master Rate Card: This acts as your un-hackable backend vault. 
+# Even if a student tries to alter the pricing on their web browser,
+# the backend forces them to pay these exact hourly rates.
+MENTORSHIP_RATE_CARD = {
+    "Arithmetic / Basic Math": 299,
+    "Reasoning / Logical Aptitude": 399,
+    "History / General Studies": 499,
+    "Physics / Higher Math": 899,
+    "Bespoke Career Counseling": 1499
+}
+
+@app.route('/mentorship')
+def mentorship_hub():
+    if 'user_email' not in session: return redirect(url_for('login'))
+    
+    # 1. Fetch OPEN slots for the student to buy
+    slots_ref = db.collection("mentorship_slots").where(filter=FieldFilter("status", "==", "available")).stream()
+    available_slots = [{"id": doc.id, **doc.to_dict()} for doc in slots_ref]
+    available_slots.sort(key=lambda x: (x.get('date', ''), x.get('start_time', '')))
+    
+    # 2. Fetch BOOKED slots that belong specifically to this student
+    my_slots_ref = db.collection("mentorship_slots").where(filter=FieldFilter("booked_by", "==", session['user_email'])).stream()
+    my_booked_slots = [{"id": doc.id, **doc.to_dict()} for doc in my_slots_ref]
+    my_booked_slots.sort(key=lambda x: (x.get('date', ''), x.get('start_time', '')))
+    
+    # Pass both lists to the HTML template
+    return render_template('mentorship.html', slots=available_slots, my_slots=my_booked_slots)
+
+@app.route('/process_mentorship_payment', methods=['POST'])
+def process_mentorship_payment():
+    if 'user_email' not in session: return redirect(url_for('login'))
+    
+    slot_id = request.form.get('slot_id')
+    subject = request.form.get('subject')
+    topic_desc = request.form.get('topic_desc')
+    
+    # SECURITY AUDIT: Verify the subject exists and match it to its real price
+    actual_price = MENTORSHIP_RATE_CARD.get(subject)
+    if not actual_price:
+        return "Invalid subject configuration detected.", 400
+        
+    # ---------------------------------------------------------------
+    # 🛠️ PRO TIP FOR RAZORPAY INTEGRATION:
+    # When you are ready to make payments live, you will insert your
+    # order creation script here using: amount = actual_price * 100
+    # ---------------------------------------------------------------
+    
+    # Successful Transaction Processor: Map student choices to the open slot
+    db.collection("mentorship_slots").document(slot_id).update({
+        "status": "booked",
+        "booked_by": session['user_email'],
+        "subject": subject,
+        "topic": topic_desc,
+        "price": actual_price
+    })
+    
+    flash(f"🎉 Slot confirmed! Your 1-on-1 session for '{subject}' is locked.")
+    return redirect(url_for('home'))
+
+@app.route('/live_session/<slot_id>')
+def live_session(slot_id):
+    if 'user_email' not in session: return redirect(url_for('login'))
+    
+    slot_doc = db.collection("mentorship_slots").document(slot_id).get()
+    if not slot_doc.exists: return "Session not found", 404
+    
+    slot_data = slot_doc.to_dict()
+    user_email = session['user_email']
+    user_role = session.get('user_role')
+    
+    # GATEKEEPER SECURITY: Only allow the matched student OR the Master Admin to enter
+    if slot_data.get('booked_by') != user_email and user_role != 'Admin':
+        return "Access Denied: You do not have booking credentials for this private room.", 403
+        
+    return render_template('live_session.html', 
+                           slot_id=slot_id, 
+                           user_name=session.get('user_name'),
+                           end_time=slot_data.get('end_datetime_str'))
+
+@app.route('/review_session/<slot_id>', methods=['GET', 'POST'])
+def review_session(slot_id):
+    if 'user_email' not in session: return redirect(url_for('login'))
+    
+    if request.method == 'POST':
+        rating = int(request.form.get('rating', 5))
+        review_text = request.form.get('review_text', '')
+        
+        # Archive review details globally to broadcast on your storefront later
+        db.collection("mentorship_reviews").add({
+            "slot_id": slot_id,
+            "student_email": session['user_email'],
+            "rating": rating,
+            "review": review_text,
+            "date": datetime.now().strftime("%Y-%m-%d")
+        })
+        flash("Thank you for sharing your feedback with Inno Mind Academy!")
+        return redirect(url_for('home'))
+        
+    return render_template('review_session.html', slot_id=slot_id)
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)

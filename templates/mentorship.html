@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Inno Mind | 1-on-1 Mentorship</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { background: #f4f6f9; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; }
+        .header { text-align: center; margin-bottom: 40px; }
+        .header h1 { color: #2c3e50; }
+        .header p { color: #7f8c8d; font-size: 18px; }
+        
+        .slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; max-width: 1000px; margin: 0 auto; }
+        
+        .slot-card {
+            background: white; border-radius: 12px; padding: 20px; text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05); transition: 0.3s;
+        }
+        .slot-card:hover { transform: translateY(-5px); box-shadow: 0 8px 25px rgba(0,0,0,0.1); }
+        .slot-date { font-weight: bold; color: #0fb9b1; font-size: 18px; margin-bottom: 5px; }
+        .slot-time { color: #34495e; font-size: 22px; font-weight: 800; margin-bottom: 15px; }
+        
+        .book-btn { background: #2c3e50; color: white; border: none; padding: 10px 20px; border-radius: 25px; cursor: pointer; font-weight: bold; width: 100%; transition: 0.2s; }
+        .book-btn:hover { background: #3498db; }
+
+        /* Modal Styles */
+        #booking-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: white; padding: 30px; border-radius: 15px; width: 400px; max-width: 90%; }
+        .modal-content h3 { margin-top: 0; color: #2c3e50; }
+        
+        select, textarea { width: 100%; padding: 10px; margin: 10px 0 20px; border-radius: 6px; border: 1px solid #bdc3c7; box-sizing: border-box; font-family: inherit; }
+        
+        .price-box { background: #e8f8f5; border: 2px dashed #0fb9b1; padding: 15px; text-align: center; border-radius: 8px; margin-bottom: 20px; }
+        .price-tag { font-size: 32px; font-weight: 900; color: #2c3e50; }
+        
+        .pay-btn { background: #27ae60; color: white; border: none; padding: 15px; border-radius: 8px; width: 100%; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .pay-btn:hover { background: #2196f3; }
+        .close-btn { background: #e74c3c; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1><i class="fas fa-video"></i> Reserve a Live Session</h1>
+        <p>Select an open slot from Senior Lecturer Sibasankar Maharana's calendar.</p>
+    </div>
+
+    <!-- ================= MY UPCOMING SESSIONS ================= -->
+    {% if my_slots %}
+    <div style="max-width: 1000px; margin: 0 auto 40px; background: white; padding: 25px; border-radius: 12px; border-top: 4px solid #9b59b6; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+        <h2 style="color: #2c3e50; margin-top: 0;"><i class="fas fa-ticket-alt"></i> My Booked Sessions</h2>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; margin-top: 20px;">
+            {% for my_slot in my_slots %}
+            <div style="background: #f8f9fa; border: 1px solid #ecf0f1; padding: 15px; border-radius: 8px;">
+                <h4 style="margin: 0 0 5px 0; color: #2c3e50;">{{ my_slot.subject }}</h4>
+                <p style="margin: 0 0 15px 0; color: #7f8c8d; font-size: 14px;">
+                    <i class="far fa-calendar"></i> {{ my_slot.date }} | <i class="far fa-clock"></i> {{ my_slot.start_time }}
+                </p>
+                <a href="/live_session/{{ my_slot.id }}" style="background: #27ae60; color: white; text-decoration: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; display: block; text-align: center;">
+                    <i class="fas fa-video"></i> Enter Live Room
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    <!-- ======================================================== -->
+
+    <div class="slot-grid">
+        {% for slot in slots %}
+        <div class="slot-card">
+            <div class="slot-date"><i class="far fa-calendar-alt"></i> {{ slot.date }}</div>
+            <div class="slot-time"><i class="far fa-clock"></i> {{ slot.start_time }}</div>
+            <button class="book-btn" onclick="openModal('{{ slot.id }}', '{{ slot.date }}', '{{ slot.start_time }}')">Configure & Book</button>
+        </div>
+        {% else %}
+        <p style="text-align:center; grid-column: 1 / -1; color: gray;">No slots currently available. Please check back later!</p>
+        {% endfor %}
+    </div>
+
+    <!-- The Checkout Modal -->
+    <div id="booking-modal">
+        <div class="modal-content">
+            <h3><i class="fas fa-sliders-h"></i> Configure Session</h3>
+            <p id="modal-slot-info" style="color: #7f8c8d; font-weight:bold;"></p>
+            
+            <form id="booking-form" action="/process_mentorship_payment" method="POST">
+                <input type="hidden" name="slot_id" id="modal_slot_id">
+                
+                <label><strong>1. Select Subject / Service:</strong></label>
+                <select name="subject" id="subject-select" onchange="updatePrice()" required>
+                    <option value="" disabled selected>-- Select an option --</option>
+                    <option value="Arithmetic / Basic Math">Arithmetic / Basic Math</option>
+                    <option value="Reasoning / Logical Aptitude">Reasoning / Logical Aptitude</option>
+                    <option value="History / General Studies">History / General Studies</option>
+                    <option value="Physics / Higher Math">Physics / Higher Math</option>
+                    <option value="Bespoke Career Counseling">Bespoke Career Counseling (UPSC/IPMAT)</option>
+                </select>
+
+                <label><strong>2. What exactly do you need help with?</strong></label>
+                <textarea name="topic_desc" rows="3" placeholder="e.g., I am struggling with finding the angle between clock hands." required></textarea>
+
+                <div class="price-box">
+                    <div>Your Session Rate:</div>
+                    <div class="price-tag" id="price-display">₹ --</div>
+                </div>
+
+                <button type="submit" class="pay-btn" id="submit-btn" disabled><i class="fas fa-lock"></i> Lock Slot & Proceed to Pay</button>
+                <button type="button" class="pay-btn close-btn" onclick="closeModal()">Cancel</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // The Admin Rate Card Engine
+        const rateCard = {
+            "Arithmetic / Basic Math": 299,
+            "Reasoning / Logical Aptitude": 399,
+            "History / General Studies": 499,
+            "Physics / Higher Math": 899,
+            "Bespoke Career Counseling": 1499
+        };
+
+        function openModal(slotId, date, time) {
+            document.getElementById('modal_slot_id').value = slotId;
+            document.getElementById('modal-slot-info').innerText = "Slot: " + date + " at " + time;
+            document.getElementById('booking-modal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('booking-modal').style.display = 'none';
+        }
+
+        function updatePrice() {
+            const subject = document.getElementById('subject-select').value;
+            const priceTag = document.getElementById('price-display');
+            const submitBtn = document.getElementById('submit-btn');
+
+            if(rateCard[subject]) {
+                priceTag.innerText = "₹ " + rateCard[subject];
+                submitBtn.disabled = false; // Enable the pay button
+            }
+        }
+    </script>
+</body>
+</html>
