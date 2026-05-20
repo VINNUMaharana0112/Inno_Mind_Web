@@ -45,22 +45,53 @@ if not firebase_admin._apps:
 db = firestore.client()
 bucket = storage.bucket()
 
-@app.context_processor
-def inject_institute_brand():
-    host_url = request.host.replace('www.', '').split(':')[0]
-    doc_ref = db.collection('institutions').document(host_url)
-    doc = doc_ref.get()
+# ================= THE MULTI-TENANT GATEKEEPER =================
+from flask import g, abort
+
+@app.before_request
+def intercept_subdomain():
+    host = request.host.split(':')[0].lower()
+    
+    # 1. Set the default Master Inno Mind branding
+    g.institute = {
+        "name": "Inno Mind Academy",
+        "domain": "innomindacademy.in",
+        "logo_url": "/static/images/innomind_logo.png",
+        "theme_color": "#1E3A8A",
+        "creator_id": "inno_mind_master" # Master ID we just migrated!
+    }
+
+    # 2. If you are testing locally on your computer, skip the subdomain check
+    if host in ['127.0.0.1', 'localhost']:
+        return
+
+    # 3. Extract the subdomain if they are on the live server
+    subdomain = None
+    if host.endswith('.innomindacademy.in'):
+        subdomain = host.replace('.innomindacademy.in', '')
+        # Clean up any trailing dots just in case
+        subdomain = subdomain.rstrip('.')
+
+    # 4. If it's the main site or www, keep the Master branding
+    if not subdomain or subdomain == 'www' or subdomain == '':
+        return
+
+    # 5. Look up the Teacher's custom institute data
+    doc = db.collection('institutes').document(subdomain).get()
     
     if doc.exists:
-        institute_data = doc.to_dict()
+        # Override the global 'g' object with the teacher's branding and ID
+        g.institute = doc.to_dict()
+        g.institute['subdomain'] = subdomain
     else:
-        institute_data = {
-            "name": "Inno Mind Academy",
-            "domain": "innomindacademy.in",
-            "logo_url": "/static/images/innomind_logo.png", 
-            "theme_color": "#1E3A8A"
-        }
-    return dict(institute=institute_data)
+        # If someone types a random URL like fake.innomindacademy.in
+        abort(404, description="This Academy does not exist on the Inno Mind Network.")
+
+@app.context_processor
+def inject_institute_brand():
+    # This automatically sends the correct branding to EVERY HTML file
+    return dict(institute=g.institute)
+# ===============================================================
 
 # ================= CORE ROUTES =================
 @app.route('/')
@@ -108,7 +139,7 @@ def home():
     available_courses = {}
     if not enrolled_course:
         try:
-            docs = db.collection('courses').where(filter=FieldFilter('status', '==', 'active')).stream()
+            docs = db.collection('courses').where(filter=FieldFilter('creator_id', '==', g.institute['creator_id'])).where(filter=FieldFilter('status', '==', 'active')).stream()
             for doc in docs:
                 c_data = doc.to_dict()
                 if "course_name" in c_data and "course_value" in c_data:
@@ -148,7 +179,7 @@ def home():
     acc = round((net_score / (total_mcq * 4) * 100), 1) if total_mcq > 0 else 0
 
         # --- NEW STOREFRONT LOGIC ---
-    packages_ref = db.collection('subscription_packages').stream()
+    packages_ref = db.collection('subscription_packages').where(filter=FieldFilter('creator_id', '==', g.institute['creator_id'])).stream()
     available_packages = []
     for pkg in packages_ref:
         pkg_data = pkg.to_dict()
@@ -235,7 +266,7 @@ def register():
     if host_url in ['127.0.0.1', 'localhost']: host_url = 'innomindacademy.in'
     
     try:
-        docs = db.collection('courses').where(filter=FieldFilter('institute_id', '==', host_url)).where(filter=FieldFilter('status', '==', 'active')).stream()
+        docs = db.collection('courses').where(filter=FieldFilter('creator_id', '==', g.institute['creator_id'])).where(filter=FieldFilter('status', '==', 'active')).stream()
         for doc in docs:
             c_data = doc.to_dict()
             if "course_name" in c_data and "course_value" in c_data:
@@ -287,7 +318,7 @@ def pricing():
         if user_doc.exists:
             current_plan = user_doc.to_dict().get('subscription', 'default_free')
 
-        pkg_stream = db.collection("subscription_packages").where(filter=FieldFilter("status", "==", "active")).stream()
+        pkg_stream = db.collection("subscription_packages").where(filter=FieldFilter('creator_id', '==', g.institute['creator_id'])).where(filter=FieldFilter("status", "==", "active")).stream()
         for doc in pkg_stream:
             pkg_data = doc.to_dict()
             pkg_data['id'] = doc.id 
@@ -311,7 +342,7 @@ def study():
         return redirect(url_for('home'))
         
     # Strictly fetch from opsc_content
-    docs = db.collection("opsc_content").where(filter=FieldFilter('course_values', 'array_contains', enrolled_course)).stream()
+    docs = db.collection("opsc_content").where(filter=FieldFilter('creator_id', '==', g.institute['creator_id'])).where(filter=FieldFilter('course_values', 'array_contains', enrolled_course)).stream()
     
     tree = {}; content_dict = {}
     for doc in docs:
@@ -403,7 +434,7 @@ def take_exam():
     master_qs = []
     safe_enrolled = str(enrolled_course).lower()
 
-    docs = db.collection("questions").stream()
+    docs = db.collection("questions").where(filter=FieldFilter('creator_id', '==', g.institute['creator_id'])).stream()
     for doc in docs:
         d_clean = {k.lower(): v for k, v in doc.to_dict().items()}
         
@@ -694,7 +725,7 @@ MENTORSHIP_RATE_CARD = {
 def mentorship_hub():
     if 'user_email' not in session: return redirect(url_for('login'))
     
-    slots_ref = db.collection("mentorship_slots").where(filter=FieldFilter("status", "==", "available")).stream()
+    slots_ref = db.collection("mentorship_slots").where(filter=FieldFilter('creator_id', '==', g.institute['creator_id'])).where(filter=FieldFilter("status", "==", "available")).stream()
     available_slots = [{"id": doc.id, **doc.to_dict()} for doc in slots_ref]
     available_slots.sort(key=lambda x: (x.get('date', ''), x.get('start_time', '')))
     
