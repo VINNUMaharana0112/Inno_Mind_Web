@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Inno Mind Network | Join as a Creator</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { background: radial-gradient(circle, #1e272e 0%, #0f171e 100%); color: white; font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .box { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); padding: 40px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); width: 450px; box-shadow: 0 15px 35px rgba(0,0,0,0.5); }
+        h2 { color: #0fb9b1; margin-top: 0; text-align: center; }
+        .field { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px; }
+        input { width: 100%; padding: 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.2); color: white; box-sizing: border-box; font-size: 15px; }
+        input:focus { outline: none; border-color: #0fb9b1; }
+        .subdomain-input { display: flex; align-items: center; }
+        .subdomain-input input { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+        .suffix { background: rgba(255,255,255,0.1); padding: 12px; border-radius: 0 6px 6px 0; border: 1px solid rgba(255,255,255,0.2); border-left: none; font-weight: bold; color: #aeb6bf; }
+        button { width: 100%; padding: 14px; background: #0fb9b1; border: none; color: #1e272e; font-weight: bold; font-size: 16px; border-radius: 6px; cursor: pointer; transition: 0.3s; margin-top: 10px; }
+        button:hover { background: #13d4c8; transform: translateY(-2px); }
+        .alert { background: rgba(231, 76, 60, 0.2); border: 1px solid #e74c3c; padding: 10px; border-radius: 6px; color: #ff7675; margin-bottom: 20px; font-size: 14px; display: none; }
+    </style>
+</head>
+<body>
+
+<div class="box">
+    <h2><i class="fas fa-rocket"></i> Launch Your Academy</h2>
+    <p style="text-align: center; color: #aeb6bf; font-size: 14px; margin-bottom: 30px;">Deploy your custom subdomain and access your desktop studio instandly.</p>
+    
+    {% if error %}
+    <div class="alert" style="display: block;">{{ error }}</div>
+    {% endif %}
+
+    <form action="/creator-join" method="POST">
+        <div class="field">
+            <label>Institute / Faculty Name</label>
+            <input type="text" name="name" placeholder="e.g., Alpha Physics Classes" required>
+        </div>
+        <div class="field">
+            <label>Choose Your Subdomain</label>
+            <div class="subdomain-input">
+                <input type="text" name="subdomain" placeholder="alpha-physics" style="text-transform: lowercase;" required>
+                <span class="suffix">.innomindacademy.in</span>
+            </div>
+        </div>
+        <div class="field">
+            <label>Registered Email (Your Creator ID)</label>
+            <input type="email" name="email" placeholder="faculty@email.com" required>
+        </div>
+        <div class="field">
+            <label>Desktop App Password</label>
+            <input type="password" name="password" placeholder="••••••••" required>
+        </div>
+        <div class="field" style="margin-top: 25px;">
+            <label><i class="fas fa-gavel"></i> Terms & Conditions for Faculties</label>
+            <div style="background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); height: 100px; overflow-y: scroll; padding: 10px; border-radius: 6px; font-size: 12px; color: #aeb6bf; line-height: 1.5; margin-bottom: 10px;">
+                <strong>1. Fee Sharing & Revenue Split:</strong> By launching an academy, the Creator explicitly agrees that Inno Mind Academy will retain a fixed 40% platform commission fee on all student transactions (including courses, test series, and 1-on-1 mentorship). The remaining 60% will be transferred to the creator's connected bank account via automated split routing.<br><br>
+                <strong>2. Prohibited Content & Unlawful Activities:</strong> The Creator retains full legal ownership and liability for all content uploaded via the Desktop Studio App. Uploading anti-national material, hate speech, sexually explicit content, or content that violates Indian Penal Code regulations, IT Rules of 2021, Digital Personal Data Protection Rules of 2025, and Digital India Act of 2025 is strictly prohibited and will result in immediate termination of the subdomain and legal reporting.<br><br>
+                <strong>3. Anti-Piracy & Data Protection:</strong> While Inno Mind employs canvas-rendering and dynamic email watermarking engines to deter piracy, the platform holds no liability for manual leakages (e.g., secondary camera recordings). Creators are strictly prohibited from harvesting or scraping student data for external marketing.<br><br>
+                <strong>4. Transparency & Audits:</strong> The Super Admin retains omniscient access to audit all courses, student registries, payment transactions, and exam sheets to maintain marketplace ecosystem integrity.
+            </div>
+            <div style="display: flex; align-items: flex-start; gap: 10px;">
+                <input type="checkbox" id="terms" name="terms_accepted" value="yes" style="width: auto; margin-top: 4px;" required>
+                <label for="terms" style="font-size: 13px; color: #0fb9b1; cursor: pointer; font-weight: normal;">
+                    I agree to the Inno Mind Creator Terms of Service and authorize the 60/40 processing split.
+                </label>
+            </div>
+        </div>
+        <button type="submit">GENERATE MY PLATFORM</button>
+    </form>
+</div>
+
+</body>
+</html>

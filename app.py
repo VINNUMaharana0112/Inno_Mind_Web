@@ -10,6 +10,7 @@ import random
 import hashlib
 from datetime import datetime, timedelta
 import razorpay
+import math
 
 app = Flask(__name__)
 app.secret_key = "inno_mind_super_secret_key" 
@@ -623,39 +624,54 @@ def checkout_page(package_id):
 # ================= 1. SECURE ORDER CREATION =================
 @app.route('/create_order', methods=['POST'])
 def create_order():
-    data = request.json
-    item_type = data.get('type') # Expected: 'subscription' or 'mentorship'
-    amount = 0
-
-    try:
-        # A. DYNAMIC PRICING FOR SUBSCRIPTIONS
-        if item_type == 'subscription':
-            package_id = data.get('package_id')
-            pkg_doc = db.collection('subscription_packages').document(package_id).get()
-            if not pkg_doc.exists: return jsonify({'error': 'Package not found'}), 404
-            amount = int(pkg_doc.to_dict().get('price', 0))
-
-        # B. DYNAMIC PRICING FOR MENTORSHIP
-        elif item_type == 'mentorship':
-            subject = data.get('subject')
-            actual_price = MENTORSHIP_RATE_CARD.get(subject)
-            if not actual_price: return jsonify({'error': 'Invalid subject pricing'}), 400
-            amount = int(actual_price)
-
-        if amount <= 0:
-            return jsonify({'error': 'Invalid amount or free item.'}), 400
-
-        # Create the order securely on Razorpay's Server
-        order_data = {'amount': amount * 100, 'currency': 'INR', 'payment_capture': '1'}
-        order = rzp_client.order.create(data=order_data)
+    # 1. Calculate how much the student is paying
+    package_id = request.form.get('package_id')
+    pkg_doc = db.collection("subscription_packages").document(package_id).get()
+    
+    if not pkg_doc.exists:
+        return jsonify({"status": "error", "message": "Package not found"}), 404
         
-        return jsonify({
-            'order_id': order['id'],
-            'amount': amount * 100,
-            'key_id': RAZORPAY_KEY_ID 
-        })
+    pkg_data = pkg_doc.to_dict()
+    total_price_in_rupees = float(pkg_data.get('price', 0))
+    # Razorpay demands amounts in Paisa (e.g., ₹1000 = 100000 paise)
+    total_amount_paisa = int(total_price_in_rupees * 100) 
+
+    # 2. Look up who owns the current subdomain context
+    # g.institute is populated automatically by our Gatekeeper Interceptor!
+    creator_id = g.institute.get('creator_id', 'inno_mind_master')
+    linked_account = g.institute.get('razorpay_linked_account', '')
+
+    # 3. Formulate the Order Configuration
+    order_payload = {
+        "amount": total_amount_paisa,
+        "currency": "INR",
+        "receipt": f"rcpt_{uuid.uuid4().hex[:8]}"
+    }
+
+    # 4. IF THIS IS A GUEST TEACHER: Activate the 60/40 Split Matrix!
+    if creator_id != 'inno_mind_master' and linked_account != '':
+        # Calculate the Teacher's 60% share in paise
+        teacher_share_paisa = int(math.floor(total_amount_paisa * 0.60))
+        
+        # Inject the Razorpay Route transfer instructions directly into the checkout pipeline
+        order_payload["transfers"] = [
+            {
+                "account": linked_account,       # The teacher's unique Razorpay Account ID
+                "amount": teacher_share_paisa,   # Exactly 60% transferred to them
+                "currency": "INR",
+                "notes": {
+                    "info": f"Course purchase split for {g.institute.get('name')}"
+                },
+                "on_hold": False # Release the money directly to their bank account balance
+            }
+        ]
+    
+    # 5. Call Razorpay API with the configuration array
+    try:
+        razorpay_order = razorpay_client.order.create(data=order_payload)
+        return jsonify(razorpay_order)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 # ================= 2. VERIFY & FULFILLMENT =================
 @app.route('/verify_payment', methods=['POST'])
@@ -709,6 +725,24 @@ def verify_payment():
 
     except Exception as e:
         return jsonify({"status": "failed", "error": str(e)}), 500
+
+# Check if they accepted the legal terms
+    terms_accepted = request.form.get('terms_accepted')
+    if terms_accepted != 'yes':
+        return render_template('creator_join.html', error="You must accept the Terms and Conditions to proceed.")
+        
+    tenant_payload = {
+        "creator_id": email,
+        "name": name,
+        "theme_color": "#e74c3c",
+        "logo_url": "/static/images/innomind_logo.png",
+        "password_hash": hashed_password,
+        "subdomain": subdomain,
+        "onboarding_date": firestore.SERVER_TIMESTAMP,
+        # RAZORPAY CONFIGURATION:
+        # Initially empty. You or the teacher will update this with their Razorpay Linked Account ID
+        "razorpay_linked_account": "" 
+    }
 
 # =================================================================
 # ================= MENTORSHIP & DOUBT CLEARANCE =================
@@ -768,6 +802,59 @@ def review_session(slot_id):
         return redirect(url_for('home'))
         
     return render_template('review_session.html', slot_id=slot_id)
+
+@app.route('/creator-join', methods=['GET', 'POST'])
+def creator_join():
+    if request.method == 'GET':
+        return render_template('creator_join.html')
+        
+    # Get form data
+    name = request.form.get('name', '').strip()
+    subdomain = request.form.get('subdomain', '').strip().lower()
+    email = request.form.get('email', '').strip().lower()
+    password = request.form.get('password', '').strip()
+    
+    # 1. NEW LEGAL GUARDRAILS CHECK
+    terms_accepted = request.form.get('terms_accepted')
+    if terms_accepted != 'yes':
+        return render_template('creator_join.html', error="You must accept the Terms and Conditions to proceed.")
+    
+    # Clean subdomain string to prevent URL exploitation
+    subdomain = re.sub(r'[^a-z0-9\-]', '', subdomain)
+    
+    if not all([name, subdomain, email, password]):
+        return render_template('creator_join.html', error="All fields are mandatory.")
+        
+    # 2. Check if the subdomain slug is already owned by someone else
+    existing_subdomain = db.collection('institutes').document(subdomain).get()
+    if existing_subdomain.exists:
+        return render_template('creator_join.html', error="This custom subdomain is already taken.")
+        
+    # 3. Check if this teacher email is already registered anywhere
+    # Fixed the .get() to use stream() to cleanly search the collection query
+    existing_creator = list(db.collection('institutes').where('creator_id', '==', email).stream())
+    if len(existing_creator) > 0:
+        return render_template('creator_join.html', error="This email is already registered to an institute.")
+
+    # 4. Provision the new micro-tenant inside Firestore
+    hashed_password = generate_password_hash(password)
+    
+    tenant_payload = {
+        "creator_id": email,
+        "name": name,
+        "theme_color": "#e74c3c", 
+        "logo_url": "/static/images/innomind_logo.png",
+        "password_hash": hashed_password,
+        "subdomain": subdomain,
+        "onboarding_date": firestore.SERVER_TIMESTAMP,
+        # 5. NEW FINANCIAL SPLIT TRACKING KEY (Set up as empty placeholder for the 60/40 Split)
+        "razorpay_linked_account": "" 
+    }
+    
+    # Save document with the subdomain as the Document ID
+    db.collection('institutes').document(subdomain).set(tenant_payload)
+    
+    return render_template('creator_success.html', subdomain=subdomain)
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)

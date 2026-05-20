@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Academy Successfully Provisioned!</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { background: #0f171e; color: white; font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .box { background: rgba(255, 255, 255, 0.05); padding: 40px; border-radius: 12px; text-align: center; max-width: 500px; border: 1px solid rgba(255,255,255,0.1); }
+        .icon { font-size: 60px; color: #2ecc71; margin-bottom: 20px; }
+        .url-box { background: rgba(0,0,0,0.3); padding: 15px; border-radius: 6px; font-family: monospace; font-size: 16px; color: #0fb9b1; margin: 20px 0; border: 1px dashed rgba(15, 185, 177, 0.5); }
+        .btn-download { display: inline-block; padding: 15px 30px; background: #3498db; color: white; font-weight: bold; text-decoration: none; border-radius: 6px; box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4); transition: 0.3s; }
+        .btn-download:hover { background: #2980b9; transform: translateY(-2px); }
+    </style>
+</head>
+<body>
+
+<div class="box">
+    <div class="icon"><i class="fas fa-check-circle"></i></div>
+    <h2>Your SaaS Workspace is Live!</h2>
+    <p style="color: #aeb6bf;">Your custom student portal has been securely carved out on our cloud architecture.</p>
+    
+    <div class="url-box">
+        https://{{ subdomain }}.innomindacademy.in
+    </div>
+
+    <p style="font-size: 14px; color: #e67e22; font-weight: bold;"><i class="fas fa-info-circle"></i> NEXT STEP FOR FACULTY:</p>
+    <p style="color: #aeb6bf; font-size: 14px; margin-bottom: 25px;">Download your Desktop Studio App below. Run it on your PC or laptop, use your registered email to authorize, and start publishing your courses instantly.</p>
+
+    <a href="https://storage.googleapis.com/psc-smart-preparation-app/dist/InnoMind_Studio_Bundle.zip" class="btn-download">
+        <i class="fas fa-download"></i> DOWNLOAD DESKTOP STUDIO (.ZIP)
+    </a>
+</div>
+
+</body>
+</html>
