@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Creator Portal | Login</title>
+    <style>
+        body { background: #0f171e; color: white; font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .box { background: rgba(255, 255, 255, 0.05); padding: 40px; border-radius: 12px; width: 400px; border: 1px solid rgba(255,255,255,0.1); }
+        h2 { color: #0fb9b1; text-align: center; margin-top: 0; }
+        .field { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-size: 14px; }
+        input { width: 100%; padding: 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.2); color: white; box-sizing: border-box; }
+        button { width: 100%; padding: 14px; background: #0fb9b1; border: none; color: #1e272e; font-weight: bold; font-size: 16px; border-radius: 6px; cursor: pointer; }
+        .alert { background: rgba(231, 76, 60, 0.2); border: 1px solid #e74c3c; padding: 10px; border-radius: 6px; color: #ff7675; margin-bottom: 20px; font-size: 14px; }
+    </style>
+</head>
+<body>
+<div class="box">
+    <h2>Creator Studio Login</h2>
+    {% if error %}<div class="alert">{{ error }}</div>{% endif %}
+    <form action="/creator-login" method="POST">
+        <div class="field">
+            <label>Registered Email</label>
+            <input type="email" name="email" required>
+        </div>
+        <div class="field">
+            <label>Password</label>
+            <input type="password" name="password" required>
+        </div>
+        <button type="submit">ACCESS STUDIO DOWNLOAD</button>
+    </form>
+</div>
+</body>
+</html>

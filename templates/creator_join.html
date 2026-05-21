@@ -27,7 +27,7 @@
     <p style="text-align: center; color: #aeb6bf; font-size: 14px; margin-bottom: 30px;">Deploy your custom subdomain and access your desktop studio instandly.</p>
     
     {% if error %}
-    <div class="alert" style="display: block;">{{ error }}</div>
+    <div class="alert" style="display: block;">{{ error | safe }}</div>
     {% endif %}
 
     <form action="/creator-join" method="POST">

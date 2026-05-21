@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, session, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, session, url_for, flash, jsonify, g, abort, send_from_directory
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -25,7 +25,6 @@ def format_smart_tags(text):
         return ""
     # SECURE PDF FIX: Route clicks to our new secure Canvas renderer
     pdf_pattern = r'\[📄 Attached PDF: (https?://[^\s\]]+)\]'
-    # We removed href and target="_blank", and added onclick="openFlipbookModal('...')"
     pdf_html = r"""<br><button onclick="openFlipbookModal('\1')" class="inno-pdf-btn" style="background:#2c3e50; color:white; padding:10px 20px; border-radius:30px; border:none; cursor:pointer; display:inline-block; margin:10px 0; font-weight:bold; box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: 0.3s;"><i class="fas fa-book-open"></i> 📖 Open 3D Flipbook</button><br>"""
     return re.sub(pdf_pattern, pdf_html, text)
 
@@ -47,8 +46,6 @@ db = firestore.client()
 bucket = storage.bucket()
 
 # ================= THE MULTI-TENANT GATEKEEPER =================
-from flask import g, abort
-
 @app.before_request
 def intercept_subdomain():
     host = request.host.split(':')[0].lower()
@@ -59,7 +56,7 @@ def intercept_subdomain():
         "domain": "innomindacademy.in",
         "logo_url": "/static/images/innomind_logo.png",
         "theme_color": "#1E3A8A",
-        "creator_id": "inno_mind_master" # Master ID we just migrated!
+        "creator_id": "inno_mind_master" 
     }
 
     # 2. If you are testing locally on your computer, skip the subdomain check
@@ -70,7 +67,6 @@ def intercept_subdomain():
     subdomain = None
     if host.endswith('.innomindacademy.in'):
         subdomain = host.replace('.innomindacademy.in', '')
-        # Clean up any trailing dots just in case
         subdomain = subdomain.rstrip('.')
 
     # 4. If it's the main site or www, keep the Master branding
@@ -81,18 +77,14 @@ def intercept_subdomain():
     doc = db.collection('institutes').document(subdomain).get()
     
     if doc.exists:
-        # Override the global 'g' object with the teacher's branding and ID
         g.institute = doc.to_dict()
         g.institute['subdomain'] = subdomain
     else:
-        # If someone types a random URL like fake.innomindacademy.in
         abort(404, description="This Academy does not exist on the Inno Mind Network.")
 
 @app.context_processor
 def inject_institute_brand():
-    # This automatically sends the correct branding to EVERY HTML file
     return dict(institute=g.institute)
-# ===============================================================
 
 # ================= CORE ROUTES =================
 @app.route('/')
@@ -110,16 +102,12 @@ def home():
         enrolled_course = user_data.get('enrolled_course')
         subscription_tier = user_data.get('subscription', 'Free')
         
-        # --- NEW EXPIRATION LOGIC ---
+        # Expiration logic
         end_date_str = user_data.get('sub_end_date')
         if end_date_str and subscription_tier != "Free":
             try:
-                # Convert the stored string date into a real Python date
                 expiration_date = datetime.strptime(end_date_str, "%Y-%m-%d")
-                
-                # Check if today is past the expiration date
                 if datetime.now() > expiration_date:
-                    # Downgrade the user!
                     db.collection('users').document(user_email).update({
                         "subscription": "Free",
                         "enrolled_course": "",
@@ -129,8 +117,7 @@ def home():
                     enrolled_course = None
                     flash("⚠️ Your subscription has expired. Please renew to access premium features.")
             except ValueError:
-                pass # Failsafe in case of a corrupted date string
-        # ----------------------------
+                pass 
 
         if enrolled_course in ["None", ""]: enrolled_course = None
             
@@ -179,16 +166,13 @@ def home():
 
     acc = round((net_score / (total_mcq * 4) * 100), 1) if total_mcq > 0 else 0
 
-        # --- NEW STOREFRONT LOGIC ---
     packages_ref = db.collection('subscription_packages').where(filter=FieldFilter('creator_id', '==', g.institute['creator_id'])).stream()
     available_packages = []
     for pkg in packages_ref:
         pkg_data = pkg.to_dict()
         pkg_data['id'] = pkg.id 
         available_packages.append(pkg_data)
-    # ----------------------------
 
-    # ONE SINGLE RETURN WITH ALL VARIABLES
     return render_template('dashboard.html', 
                            user_name=session.get('user_name'), 
                            acc=acc, 
@@ -279,22 +263,15 @@ def register():
 # ================= ADMIN MAGIC LINK ENGINE =================
 @app.route('/magic_login/<token>')
 def magic_login(token):
-    # 1. Look up the secure token in the database
     doc_ref = db.collection("magic_tokens").document(token)
     doc = doc_ref.get()
     
     if doc.exists:
         data = doc.to_dict()
-        
-        # 2. Grant the browser full Admin Session cookies
         session['user_email'] = data.get('email', 'admin@innomind.in')
         session['user_role'] = data.get('role', 'Admin')
         session['user_name'] = "Master Admin"
-        
-        # 3. Burn after reading (Delete token so it can never be reused)
         doc_ref.delete()
-        
-        # 4. Route the admin to the room they actually wanted to join
         next_url = request.args.get('next', '/home')
         return redirect(next_url)
         
@@ -342,24 +319,17 @@ def study():
         flash("You are not enrolled in a course yet.")
         return redirect(url_for('home'))
         
-    # Strictly fetch from opsc_content
     docs = db.collection("opsc_content").where(filter=FieldFilter('creator_id', '==', g.institute['creator_id'])).where(filter=FieldFilter('course_values', 'array_contains', enrolled_course)).stream()
     
     tree = {}; content_dict = {}
     for doc in docs:
         d = doc.to_dict()
-        
-        # --- THE FIX IS HERE ---
-        # Instead of: c = d.get('course', 'Uncategorized')
-        # We FORCE the top folder to be the student's enrolled course!
         c = enrolled_course 
-        
         s = d.get('subject', 'General')
         b = d.get('block', 'Block')
         u = d.get('unit', 'Unit')
         t = d.get('topic', 'Topic')
         st = d.get('subtopic', 'Subtopic')
-        # -----------------------
         
         if c not in tree: tree[c] = {}
         if s not in tree[c]: tree[c][s] = {}
@@ -373,7 +343,6 @@ def study():
         html_body = re.sub(r'\{\{IMG:(.*?)\}\}', r'<img src="/asset/\1" style="max-width:100%; border-radius:8px; margin:15px 0;">', raw_body)
         html_body = format_smart_tags(html_body)
         
-        # Because we changed 'c', the breadcrumbs will also now display perfectly!
         content_dict[doc.id] = {'breadcrumbs': f"{c} &rarr; {s} &rarr; {b} &rarr; {u} &rarr; {t}", 'title': st, 'body': html_body}
 
     def generate_tree_html(node, depth=0, prefix="tier"):
@@ -403,11 +372,9 @@ def secure_viewer():
     if 'user_email' not in session: return redirect(url_for('login'))
     doc_url = request.args.get('doc_url')
     if not doc_url: return "Document Missing", 404
-    
-    # Renders the PDF.js Canvas template to prevent copying and downloading
     return render_template('secure_pdf.html', pdf_url=doc_url)
 
-# ================= EXAM ENGINE (DEEP HIERARCHY) =================
+# ================= EXAM ENGINE =================
 @app.route('/exam_config')
 def exam_config():
     if 'user_email' not in session: return redirect(url_for('login'))
@@ -431,7 +398,6 @@ def take_exam():
     allowed_types = request.form.getlist('q_types')
     if not allowed_types: allowed_types = ['MCQ', 'Short Answer', 'Long Answer']
 
-    # ONLY fetch from the standalone 'questions' collection now
     master_qs = []
     safe_enrolled = str(enrolled_course).lower()
 
@@ -439,11 +405,9 @@ def take_exam():
     for doc in docs:
         d_clean = {k.lower(): v for k, v in doc.to_dict().items()}
         
-        # Check course alignment
         db_course = str(d_clean.get('target_course', '')).lower()
         if safe_enrolled not in db_course and db_course not in safe_enrolled: continue
         
-        # Check Question Type
         q_type = str(d_clean.get('question_type', 'mcq')).upper()
         if q_type == 'SHORT': q_type = 'Short Answer'
         if q_type == 'LONG': q_type = 'Long Answer'
@@ -476,7 +440,6 @@ def take_exam():
 
         master_qs.append(smart_q)
 
-    # Filter by user's tags (Matches against block, unit, topic, or subtopic!)
     active_test_qs = []
     used_hashes_this_test = set() 
 
@@ -485,7 +448,6 @@ def take_exam():
         count = int(count_str)
         tag_l = tag.strip().lower()
         
-        # Fuzzy match against the entire meta dictionary to allow deep searching
         valid_pool = [q for q in master_qs if q['q_hash'] not in used_hashes_this_test and (not tag_l or tag_l in str(q['meta']).lower())]
         
         random.shuffle(valid_pool)
@@ -557,7 +519,7 @@ def submit_exam():
     flash(f"🎉 Exam Submitted! You scored {final_mcq_score} marks.")
     return redirect(url_for('home'))
 
-# ================= LIVE BOARD / EXTRAS =================
+# ================= LIVE BOARD & CALENDAR =================
 @app.route('/calendar')
 def campus_calendar():
     student_email = session.get('user_email')
@@ -593,13 +555,10 @@ def update_live_board():
     return jsonify({"success": True})
 
 # ================= REAL PAYMENT GATEWAY (RAZORPAY) =================
-# We use os.environ to keep keys hidden from GitHub. 
-# REPLACE THESE WITH YOUR KEYS BEFORE DEPLOYING!
-RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'rzp_test_Sqng5W9WzwHJZe') 
-RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'VdrgVmLO6tT5hNtrKc0kemMj')
+RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'rzp_live_Sqo4je7UJiSlnH') 
+RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'EwWbZOKLTS42U36u72yQrLvr')
 rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
-# --- Standard Pages ---
 @app.route('/terms')
 def terms(): return render_template('terms.html')
 @app.route('/privacy')
@@ -621,10 +580,8 @@ def checkout_page(package_id):
     package_data['id'] = pkg_doc.id
     return render_template('checkout.html', package=package_data)
 
-# ================= 1. SECURE ORDER CREATION =================
 @app.route('/create_order', methods=['POST'])
 def create_order():
-    # 1. Calculate how much the student is paying
     package_id = request.form.get('package_id')
     pkg_doc = db.collection("subscription_packages").document(package_id).get()
     
@@ -633,53 +590,42 @@ def create_order():
         
     pkg_data = pkg_doc.to_dict()
     total_price_in_rupees = float(pkg_data.get('price', 0))
-    # Razorpay demands amounts in Paisa (e.g., ₹1000 = 100000 paise)
     total_amount_paisa = int(total_price_in_rupees * 100) 
 
-    # 2. Look up who owns the current subdomain context
-    # g.institute is populated automatically by our Gatekeeper Interceptor!
     creator_id = g.institute.get('creator_id', 'inno_mind_master')
     linked_account = g.institute.get('razorpay_linked_account', '')
 
-    # 3. Formulate the Order Configuration
     order_payload = {
         "amount": total_amount_paisa,
         "currency": "INR",
         "receipt": f"rcpt_{uuid.uuid4().hex[:8]}"
     }
 
-    # 4. IF THIS IS A GUEST TEACHER: Activate the 60/40 Split Matrix!
     if creator_id != 'inno_mind_master' and linked_account != '':
-        # Calculate the Teacher's 60% share in paise
         teacher_share_paisa = int(math.floor(total_amount_paisa * 0.60))
-        
-        # Inject the Razorpay Route transfer instructions directly into the checkout pipeline
         order_payload["transfers"] = [
             {
-                "account": linked_account,       # The teacher's unique Razorpay Account ID
-                "amount": teacher_share_paisa,   # Exactly 60% transferred to them
+                "account": linked_account,       
+                "amount": teacher_share_paisa,   
                 "currency": "INR",
                 "notes": {
                     "info": f"Course purchase split for {g.institute.get('name')}"
                 },
-                "on_hold": False # Release the money directly to their bank account balance
+                "on_hold": False 
             }
         ]
     
-    # 5. Call Razorpay API with the configuration array
     try:
         razorpay_order = razorpay_client.order.create(data=order_payload)
         return jsonify(razorpay_order)
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# ================= 2. VERIFY & FULFILLMENT =================
 @app.route('/verify_payment', methods=['POST'])
 def verify_payment():
     student_email = session.get('user_email')
     data = request.json
     try:
-        # 1. VERIFY THE SECURE SIGNATURE
         rzp_client.utility.verify_payment_signature({
             'razorpay_order_id': data.get('razorpay_order_id'),
             'razorpay_payment_id': data.get('razorpay_payment_id'),
@@ -688,7 +634,6 @@ def verify_payment():
         
         item_type = data.get('type')
 
-        # 2. UPGRADE SUBSCRIPTION
         if item_type == 'subscription':
             package_id = data.get('package_id')
             pkg_doc = db.collection("subscription_packages").document(package_id).get()
@@ -707,7 +652,6 @@ def verify_payment():
             })
             return jsonify({"status": "success", "message": "Account Upgraded Successfully!"})
 
-        # 3. BOOK MENTORSHIP SLOT
         elif item_type == 'mentorship':
             slot_id = data.get('slot_id')
             subject = data.get('subject')
@@ -726,31 +670,11 @@ def verify_payment():
     except Exception as e:
         return jsonify({"status": "failed", "error": str(e)}), 500
 
-# Check if they accepted the legal terms
-    terms_accepted = request.form.get('terms_accepted')
-    if terms_accepted != 'yes':
-        return render_template('creator_join.html', error="You must accept the Terms and Conditions to proceed.")
-        
-    tenant_payload = {
-        "creator_id": email,
-        "name": name,
-        "theme_color": "#e74c3c",
-        "logo_url": "/static/images/innomind_logo.png",
-        "password_hash": hashed_password,
-        "subdomain": subdomain,
-        "onboarding_date": firestore.SERVER_TIMESTAMP,
-        # RAZORPAY CONFIGURATION:
-        # Initially empty. You or the teacher will update this with their Razorpay Linked Account ID
-        "razorpay_linked_account": "" 
-    }
-
-# =================================================================
 # ================= MENTORSHIP & DOUBT CLEARANCE =================
-# =================================================================
 MENTORSHIP_RATE_CARD = {
     "Arithmetic / Basic Math": 1499,
     "Reasoning / Logical Aptitude": 1799,
-    "History / General Studies": 499,
+    "History / General Studies": 1499,
     "Physics / Higher Math": 1899,
     "Career Counseling and Consultation": 1499
 }
@@ -803,42 +727,34 @@ def review_session(slot_id):
         
     return render_template('review_session.html', slot_id=slot_id)
 
+# ================= CREATOR ONBOARDING MODULE =================
 @app.route('/creator-join', methods=['GET', 'POST'])
 def creator_join():
     if request.method == 'GET':
         return render_template('creator_join.html')
         
-    # Get form data
     name = request.form.get('name', '').strip()
     subdomain = request.form.get('subdomain', '').strip().lower()
     email = request.form.get('email', '').strip().lower()
     password = request.form.get('password', '').strip()
     
-    # 1. NEW LEGAL GUARDRAILS CHECK
     terms_accepted = request.form.get('terms_accepted')
     if terms_accepted != 'yes':
         return render_template('creator_join.html', error="You must accept the Terms and Conditions to proceed.")
     
-    # Clean subdomain string to prevent URL exploitation
     subdomain = re.sub(r'[^a-z0-9\-]', '', subdomain)
-    
     if not all([name, subdomain, email, password]):
         return render_template('creator_join.html', error="All fields are mandatory.")
         
-    # 2. Check if the subdomain slug is already owned by someone else
-    existing_subdomain = db.collection('institutes').document(subdomain).get()
-    if existing_subdomain.exists:
+    if db.collection('institutes').document(subdomain).get().exists:
         return render_template('creator_join.html', error="This custom subdomain is already taken.")
         
-    # 3. Check if this teacher email is already registered anywhere
-    # Fixed the .get() to use stream() to cleanly search the collection query
     existing_creator = list(db.collection('institutes').where('creator_id', '==', email).stream())
     if len(existing_creator) > 0:
-        return render_template('creator_join.html', error="This email is already registered to an institute.")
+        error_msg = 'This email is already registered. <a href="/creator-login" style="color:#ff7675; text-decoration:underline; font-weight:bold;">Click here to Login & Download Studio.</a>'
+        return render_template('creator_join.html', error=error_msg)
 
-    # 4. Provision the new micro-tenant inside Firestore
     hashed_password = generate_password_hash(password)
-    
     tenant_payload = {
         "creator_id": email,
         "name": name,
@@ -847,14 +763,54 @@ def creator_join():
         "password_hash": hashed_password,
         "subdomain": subdomain,
         "onboarding_date": firestore.SERVER_TIMESTAMP,
-        # 5. NEW FINANCIAL SPLIT TRACKING KEY (Set up as empty placeholder for the 60/40 Split)
         "razorpay_linked_account": "" 
     }
     
-    # Save document with the subdomain as the Document ID
     db.collection('institutes').document(subdomain).set(tenant_payload)
-    
     return render_template('creator_success.html', subdomain=subdomain)
+
+@app.route('/creator-login', methods=['GET', 'POST'])
+def creator_login():
+    if request.method == 'GET':
+        return render_template('creator_login.html')
+        
+    email = request.form.get('email', '').strip().lower()
+    password = request.form.get('password', '').strip()
+    
+    institutes = list(db.collection('institutes').where('creator_id', '==', email).stream())
+    
+    if not institutes:
+        return render_template('creator_login.html', error="No creator account found with this email.")
+        
+    inst_data = institutes[0].to_dict()
+    
+    if check_password_hash(inst_data.get('password_hash', ''), password):
+        return render_template('creator_success.html', subdomain=inst_data.get('subdomain'))
+    else:
+        return render_template('creator_login.html', error="Invalid password.")
+
+@app.route('/download-studio')
+def download_studio():
+    return send_from_directory(directory='static', path='InnoMind_Studio_Bundle.zip', as_attachment=True)
+
+@app.route('/submit-feedback', methods=['POST'])
+def submit_feedback():
+    if 'user_email' not in session:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        
+    message = request.form.get('message')
+    target_creator = g.institute.get('creator_id', 'inno_mind_master')
+    
+    feedback_data = {
+        "student_email": session['user_email'],
+        "student_name": session.get('user_name', 'Student'),
+        "creator_id": target_creator,
+        "message": message,
+        "timestamp": firestore.SERVER_TIMESTAMP
+    }
+    
+    db.collection('feedbacks').add(feedback_data)
+    return jsonify({"status": "success", "message": "Feedback sent to your instructor."})
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)
