@@ -555,9 +555,18 @@ def update_live_board():
     return jsonify({"success": True})
 
 # ================= REAL PAYMENT GATEWAY (RAZORPAY) =================
-RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'rzp_live_Sqo4je7UJiSlnH') 
-RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'EwWbZOKLTS42U36u72yQrLvr')
+RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'rzp_test_TFbNtrL5cef4Pi') 
+RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'Tw4U9iCJQeW05vnhetcQVbYK')
 rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+
+# MOVED RATE CARD UP HERE FOR CREATE_ORDER ACCESS
+MENTORSHIP_RATE_CARD = {
+    "Arithmetic / Basic Math": 1499,
+    "Reasoning / Logical Aptitude": 1799,
+    "History / General Studies": 1499,
+    "Physics / Higher Math": 1899,
+    "Career Counseling and Consultation": 1499
+}
 
 @app.route('/terms')
 def terms(): return render_template('terms.html')
@@ -582,14 +591,31 @@ def checkout_page(package_id):
 
 @app.route('/create_order', methods=['POST'])
 def create_order():
-    package_id = request.form.get('package_id')
-    pkg_doc = db.collection("subscription_packages").document(package_id).get()
+    # Detects JSON or Form data depending on how the frontend sends it
+    data = request.json if request.is_json else request.form
     
-    if not pkg_doc.exists:
-        return jsonify({"status": "error", "message": "Package not found"}), 404
+    package_id = data.get('package_id')
+    slot_id = data.get('slot_id')
+    
+    total_price_in_rupees = 0
+
+    # Handles Course Package Purchases
+    if package_id:
+        pkg_doc = db.collection("subscription_packages").document(package_id).get()
+        if not pkg_doc.exists:
+            return jsonify({"status": "error", "message": "Package not found"}), 404
+        total_price_in_rupees = float(pkg_doc.to_dict().get('price', 0))
         
-    pkg_data = pkg_doc.to_dict()
-    total_price_in_rupees = float(pkg_data.get('price', 0))
+    # Handles Mentorship Bookings
+    elif slot_id:
+        subject = data.get('subject')
+        if not subject:
+            return jsonify({"status": "error", "message": "Mentorship subject required"}), 400
+        total_price_in_rupees = float(MENTORSHIP_RATE_CARD.get(subject, 1499))
+        
+    else:
+        return jsonify({"status": "error", "message": "Invalid purchase request"}), 400
+
     total_amount_paisa = int(total_price_in_rupees * 100) 
 
     creator_id = g.institute.get('creator_id', 'inno_mind_master')
@@ -616,7 +642,7 @@ def create_order():
         ]
     
     try:
-        razorpay_order = razorpay_client.order.create(data=order_payload)
+        razorpay_order = rzp_client.order.create(data=order_payload)
         return jsonify(razorpay_order)
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -671,14 +697,6 @@ def verify_payment():
         return jsonify({"status": "failed", "error": str(e)}), 500
 
 # ================= MENTORSHIP & DOUBT CLEARANCE =================
-MENTORSHIP_RATE_CARD = {
-    "Arithmetic / Basic Math": 1499,
-    "Reasoning / Logical Aptitude": 1799,
-    "History / General Studies": 1499,
-    "Physics / Higher Math": 1899,
-    "Career Counseling and Consultation": 1499
-}
-
 @app.route('/mentorship')
 def mentorship_hub():
     if 'user_email' not in session: return redirect(url_for('login'))

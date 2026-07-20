@@ -115,7 +115,7 @@
         const rateCard = {
             "Arithmetic / Basic Math": 1499,
             "Reasoning / Logical Aptitude": 1799,
-            "History / General Studies": 499,
+            "History / General Studies": 1499,
             "Physics / Higher Math": 1899,
             "Career Counseling and Consultation": 1499
         };
@@ -173,14 +173,14 @@
                     return;
                 }
 
-                // 2. Open Razorpay
+                // 2. Open Razorpay (FIXED VARIABLES)
                 var options = {
-                    "key": data.key_id,
+                    "key": "rzp_live_SvWQad5hkYttdc", // <-- PASTE YOUR PUBLIC LIVE KEY ID HERE
                     "amount": data.amount,
                     "currency": "INR",
                     "name": "Inno Mind Mentorship",
                     "description": "1-on-1 Session: " + subject,
-                    "order_id": data.order_id,
+                    "order_id": data.id, // <-- FIXED: Razorpay names this variable 'id', not 'order_id'
                     "handler": function (response) {
                         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying Payment...';
                         
